@@ -363,6 +363,11 @@ class TraceTree:
             attributes_lc_name = cast(Optional[str], attributes.get("lc_name"))
             if attributes_lc_name is not None:
                 return attributes_lc_name
+            
+        # Case 8: user in openai python SDK
+        agent_name = cast(Optional[str], attributes.get("gen_ai.user"))
+        if agent_name is not None:
+            return agent_name
 
     def maybe_reward_dict(self) -> dict[str, Any]:
         """Return a reward payload if the span encodes one.
@@ -404,6 +409,7 @@ class TraceTree:
         within_reward: Optional[bool] = None,
         within_llm_call: Optional[bool] = None,
         existing_llm_call_response_ids: Optional[set[str]] = None,
+        match_w_itself: Optional[bool] = None
     ) -> List[Tuple["TraceTree", str]]:
         """Find LLM call spans matching the supplied filters.
 
@@ -420,6 +426,18 @@ class TraceTree:
             match.
         """
         llm_calls: List[Tuple[TraceTree, str]] = []
+
+        if match_w_itself:
+            # if we want to match a llm_call and also an agent_name we have to move up the matching agent part
+            agent_name = self.agent_name()
+            if agent_name is not None:
+                if agent_match is None or re.search(agent_match, agent_name):
+                    within_matching_subtree = agent_name
+                else:
+                    pass
+                
+            if within_reward is not None and self.is_reward_span():
+                within_reward = True
 
         is_llm_call = True
         if within_matching_subtree is None or within_reward is True:
@@ -451,15 +469,17 @@ class TraceTree:
                 if within_llm_call is not None:
                     within_llm_call = True
 
-        agent_name = self.agent_name()
-        if agent_name is not None:
-            if agent_match is None or re.search(agent_match, agent_name):
-                within_matching_subtree = agent_name
-            else:
-                within_matching_subtree = None
+        if match_w_itself is False:
+            agent_name = self.agent_name()
+            if agent_name is not None:
+                if agent_match is None or re.search(agent_match, agent_name):
+                    within_matching_subtree = agent_name
+                else:
+                    #within_matching_subtree = None
+                    pass
 
-        if within_reward is not None and self.is_reward_span():
-            within_reward = True
+            if within_reward is not None and self.is_reward_span():
+                within_reward = True
 
         for child in self.children:
             llm_calls.extend(
@@ -470,8 +490,11 @@ class TraceTree:
                     within_reward=within_reward,
                     within_llm_call=within_llm_call,
                     existing_llm_call_response_ids=existing_llm_call_response_ids,
+                    match_w_itself=match_w_itself
                 )
             )
+        
+        logger.debug(f"llm_calls: {llm_calls}")
 
         return llm_calls
 
@@ -677,13 +700,15 @@ class TraceTree:
         prompt_raw_content = _attributes_unflatten_multiple(
             span.attributes, ["gen_ai.prompt", "agentlightning.operation.input.messages"]
         )
+        logger.debug(f"raw prompt for span_id: {span.span_id}:\n {prompt_raw_content}")
         completion_raw_content = _attributes_unflatten_multiple(
             span.attributes, ["gen_ai.completion", "agentlightning.operation.output.choices"]
         )
+        logger.debug(f"raw completion for span_id: {span.span_id}:\n {completion_raw_content}")
         image_urls = self.extract_prompt_image_urls(prompt_raw_content)
         prompt_payload = {"token_ids": prompt_token_ids, "raw_content": prompt_raw_content, "image_urls": image_urls}
         response_payload = {"token_ids": response_token_ids, "raw_content": completion_raw_content}
-
+        
         # FIXME: logprob doesn't support Weave tracer yet.
         logprobs_content = span.attributes.get("logprobs.content", None)  # type: ignore
         if isinstance(logprobs_content, str):
@@ -708,6 +733,7 @@ class TraceTree:
         reward_match: RewardMatchPolicy = RewardMatchPolicy.FIRST_OCCURRENCE,
         final_reward: Optional[float] = None,
         _skip_empty_token_spans: bool = False,
+        match_w_itself:bool = False,
     ) -> List[Triplet]:
         """Convert the trace tree into a trajectory of [`Triplet`][agentlightning.Triplet] items.
 
@@ -719,7 +745,7 @@ class TraceTree:
             dedup_llm_call: When `True`, deduplicates spans using the LLM response identifier.
             reward_match: Reward matching policy used to associate reward spans with LLM calls.
             final_reward: Optional reward appended to the final transition when provided.
-
+            match_w_itself: Optional match the agent also with itself and not just with  his children
         Returns:
             A list of [`Triplet`][agentlightning.Triplet] objects ordered by call sequence.
         """
@@ -731,8 +757,8 @@ class TraceTree:
             within_reward=False if exclude_llm_call_in_reward else None,
             within_llm_call=False if dedup_llm_call else None,
             existing_llm_call_response_ids=set(),
+            match_w_itself=match_w_itself
         )
-
         id_transitions: List[Tuple[str, Triplet]] = []
         # We need to filter out the LLM calls with unrecorded token IDs
         filtered_llm_calls: List[Tuple[TraceTree, str]] = []
@@ -791,6 +817,7 @@ class TracerTraceToTriplet(TraceToTripletBase):
         exclude_llm_call_in_reward: bool = True,
         reward_match: RewardMatchPolicy = RewardMatchPolicy.FIRST_OCCURRENCE,
         _skip_empty_token_spans: bool = False,
+        match_w_itself:bool = False
     ):
         self.repair_hierarchy = repair_hierarchy
         self.llm_call_match = llm_call_match
@@ -798,6 +825,7 @@ class TracerTraceToTriplet(TraceToTripletBase):
         self.exclude_llm_call_in_reward = exclude_llm_call_in_reward
         self.reward_match = reward_match
         self._skip_empty_token_spans = _skip_empty_token_spans
+        self.match_w_itself = match_w_itself
 
     def visualize(
         self,
@@ -850,6 +878,7 @@ class TracerTraceToTriplet(TraceToTripletBase):
             exclude_llm_call_in_reward=self.exclude_llm_call_in_reward,
             reward_match=self.reward_match,
             _skip_empty_token_spans=self._skip_empty_token_spans,
+            match_w_itself=self.match_w_itself
         )
         return trajectory
 
