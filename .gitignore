@@ -14,6 +14,9 @@ __pycache__/
 # C extensions
 *.so
 
+# wand db
+wandb/
+
 # Distribution / packaging
 .Python
 build/
