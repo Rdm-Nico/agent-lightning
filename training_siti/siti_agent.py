@@ -43,6 +43,14 @@ class SitiAgent:
     def extract(self, msg:str)-> Tecnico|None:
         """Funzione per scrivere un messaggio al extractor model"""
         model_response = self.extractor_model.chat(message=msg, schema=Tecnico, user="extractor")
+        # controlliamo che non sia avvenuto un errore:
+        if "error" in model_response['status']:
+            logger.error(f"errore nella estrazione dei dati: {model_response["status"]["error"]}")
+            # facciamo un alto tentativo
+            model_response = self.extractor_model.chat(message=msg, schema=Tecnico, user="extractor")
+            if "error" in model_response['status']:
+                logger.error(f"errore nuovamente, passiamo avanti: {model_response["status"]["error"]}")
+                return None
         # puliamo da eventuali json tag non desiderati
         model_response = clean_response(model_response['content'])
         # castiamo e controlliamo i campi
@@ -82,9 +90,9 @@ class LitSitiAgent(agl.LitAgent[Dict[str,Any]]):
             logger.error(f"la ground truth è non simmetrica con i dati: {gt}")
             return 0.0
         if clean_gt['arguments']['push'] == bool(response['push']):
-            return 1.0
+            return 3.0
         else:
-            return 0.0
+            return -1.0
 
     def compute_extractor_reward(self, response:Tecnico,gt:Dict[str, Any], metric='all')-> float:
         """Funzione per calcolare i verifiable reward dell extractor model"""
@@ -109,13 +117,17 @@ class LitSitiAgent(agl.LitAgent[Dict[str,Any]]):
         clean_gt_str =  re.sub(r"<TOOLCALL>\[(.*?)\]</TOOLCALL>\n?",r"\1", gt['content'])
         # e convertiamo in un json object
         clean_gt = json.loads(clean_gt_str)
-        gt_embed =  torch.Tensor(self.agent.embed(clean_gt['arguments']['summary'])['embeddings'][0]['embedding'])
+        try:
+            gt_embed =  torch.Tensor(self.agent.embed(clean_gt['arguments']['summary'])['embeddings'][0]['embedding'])
+        except KeyError as e:
+            logger.warning(f"la gt in verità è {clean_gt['arguments']}")
         predict_embed = torch.Tensor(self.agent.embed(predict)['embeddings'][0]['embedding'])
         #logger.debug(gt_embed)
         # compute cosine similarity
         cos = torch.nn.CosineSimilarity(dim=0, eps=1e-6)
+        result = cos(predict_embed, gt_embed)
 
-        return cos(predict_embed, gt_embed)
+        return result
 
     def rollout(self, task: Dict[str, Any], resources: agl.NamedResources, rollout: agl.Rollout) -> float|None:
         """
@@ -144,7 +156,7 @@ class LitSitiAgent(agl.LitAgent[Dict[str,Any]]):
         gt_assistant = [assistant for assistant in gt if assistant['role'] == 'assistant']
         gt_extractor = [assistant for assistant in gt if assistant['role'] == 'extractor']
 
-        logger.debug(f"messaggi che l'utente invia: {max_turns}")
+        
         
 
         
@@ -158,7 +170,11 @@ class LitSitiAgent(agl.LitAgent[Dict[str,Any]]):
                 tool_call_id = model_response['tool_calls']['id']
 
                 if function_name == 'extractor_expert':
-                    #TODO: calcolare il reward prima di chiamara l'agent (con gli embedding)
+                    if idx == max_turns -1:
+                        logger.warning(f"modello chiama extractor quando dovrebbe chiamare push_data: reward negativo")
+                        fail_reward -= 1.0
+                        continue
+                    # calcolare il reward prima di chiamara l'agent (con gli embedding)
                     summary = model_response['tool_calls']['arguments']['summary']
                     summary_rewards = torch.cat((summary_rewards,self.compute_summary_reward(summary, gt_assistant[idx]).reshape(1)))
                     extractor_response = self.agent.extract(summary)
@@ -178,23 +194,33 @@ class LitSitiAgent(agl.LitAgent[Dict[str,Any]]):
 
                 elif function_name == 'push_data':
                     if idx != max_turns - 1:
-                        logger.warning(f"il push tool è stato chiamato prima del previsto. inviamo un reward negativo")
-                        fail_reward -= 10.0
+                        logger.warning(f"il push tool è stato chiamato prima del previsto. inviamo un reward negativo più grande")
+                        fail_reward -= 3.0
                         break
                     ris_push = model_response['tool_calls']['arguments']
                     # controlliamo se corrisponde alla gt
                     push_reward += self.compute_push_reward(ris_push, gt_assistant[idx])
-                    #logger.debug(f"reward del push è {push_reward}") 
-                    
+                    #logger.debug(f"reward del push è {push_reward}")
                 else:
-                    # reward negativo per non aver chiamato nessun tool
-                    logger.warning(f"non chiamato nessun tool: inviare un reward negativo")
-                    fail_reward =- 5.0
-                    
-        logger.debug(f"summary_rewards: {summary_rewards}")
+                    logger.warning(f"chiamato una funzione che non esiste: {function_name}: inviare un reward negativo")
+                    fail_reward -= 1.0    
+            else:
+                # reward negativo per non aver chiamato nessun tool
+                logger.warning(f"non chiamato nessun tool: inviare un reward negativo")
+                fail_reward -= 1.0
+        
+        # normalizziamo il fail_reward:
+        fail_reward  /= max_turns
         # compute final reward
         final_reward = push_reward + fail_reward + summary_rewards.mean(0).item()
-        
+        logger.warning("+" * 30)
+        logger.warning(f"rollout id: {rollout.rollout_id}")                    
+        logger.warning(f"summary_rewards: {summary_rewards}")
+        logger.warning(f"push_reward: {push_reward}")
+        logger.warning(f"fail_reward: {fail_reward}")
+        logger.warning(f"final reward: {final_reward}")
+        logger.warning("+" * 30)
+        logger.info(f"final reward of rollout: {rollout.rollout_id} is: {final_reward}")
         return final_reward
 
 

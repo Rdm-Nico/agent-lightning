@@ -729,14 +729,16 @@ class vLLMClient(InferenceClient):
             
             if verbose:
                 return chat_response
-            if len(msg_response.tool_calls) > 0:
-                tool_call = {
-                    'name': msg_response.tool_calls[0].function.name,
-                    'type': 'function',
-                    'id': msg_response.tool_calls[0].id,
-                    'arguments': json.loads(msg_response.tool_calls[0].function.arguments)
-                }
-                return self.generate_output(status="success", tool_calls=tool_call)
+            
+            if msg_response.tool_calls:
+                if len(msg_response.tool_calls) > 0:
+                    tool_call = {
+                        'name': msg_response.tool_calls[0].function.name,
+                        'type': 'function',
+                        'id': msg_response.tool_calls[0].id,
+                        'arguments': json.loads(msg_response.tool_calls[0].function.arguments)
+                    }
+                    return self.generate_output(status="success", tool_calls=tool_call)
             return self.generate_output(status="success", content=msg_response.content)
         except Exception as e:
             if verbose:

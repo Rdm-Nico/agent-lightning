@@ -43,7 +43,7 @@ from utils.logger import Logger
 import os
 
 
-logger = Logger(save=False, consoleLevel="DEBUG").getLogger()
+logger = Logger(save=False, consoleLevel="WARNING").getLogger()
 
 def verl_default_config() -> Dict[str,Any]:
     config = {
@@ -99,7 +99,7 @@ def verl_default_config() -> Dict[str,Any]:
             "n_gpus_per_node": 1,
             "val_before_train": True,
             "critic_warmup": 0,
-            "logger": ["console","wandb"],
+            "logger": ["console"],
             "project_name": "SitiBTAgent",
             "experiment_name": "whatsapp_agent",
             "nnodes": 1,
@@ -246,7 +246,7 @@ def train(
         trainer = agl.Trainer(algorithm=algo, n_runners=n_runners, store=store, adapter=adapter)
 
     # start the training
-    trainer.fit(LitSitiAgent(), train_dataset, val_dataset=val_dataset[:20])
+    trainer.fit(LitSitiAgent(), train_dataset, val_dataset=val_dataset[:3])
 
 
 if __name__ == "__main__":
