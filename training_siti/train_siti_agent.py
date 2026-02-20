@@ -52,18 +52,18 @@ def verl_default_config() -> Dict[str,Any]:
             "use_kl_in_reward": False
         },
         "data": {
-            "train_batch_size": 16,
+            "train_batch_size": 8,
             "max_prompt_length": 4096,
             "max_response_length": 2048
         },
         "actor_rollout_ref": {
             "rollout": {
                 "tensor_model_parallel_size": 1,
-                "n": 4,
-                "log_prob_micro_batch_size_per_gpu": 4,
+                "n": 2,
+                "log_prob_micro_batch_size_per_gpu": 2,
                 "multi_turn": {"format": "hermes"},
                 "name": "vllm",
-                "gpu_memory_utilization": 0.6,
+                "gpu_memory_utilization": 0.4,
                 "engine_kwargs": {
                     "vllm": {
                         "enable_auto_tool_choice": True,
@@ -72,8 +72,8 @@ def verl_default_config() -> Dict[str,Any]:
                 },
             },
             "actor": {
-                "ppo_mini_batch_size":16,
-                "ppo_micro_batch_size_per_gpu": 2,
+                "ppo_mini_batch_size":8,
+                "ppo_micro_batch_size_per_gpu": 1,
                 "optim": {"lr": 1e-6},
                 "use_kl_loss": False,
                 "kl_loss_coef": 0,
@@ -86,7 +86,7 @@ def verl_default_config() -> Dict[str,Any]:
                 }
             },
             "ref": {
-                "log_prob_micro_batch_size_per_gpu": 4,
+                "log_prob_micro_batch_size_per_gpu": 2,
                 "fsdp_config": {"param_offload": True}
             },
             "model": {
@@ -201,7 +201,7 @@ def train(
            print(f"PROJECT_NAME={PROJECT_NAME}")
            print(f"EXPERIMENT_NAME={EXPERIMENT_NAME}")
        # Keep it tiny/light without adding new knobs
-       config["actor_rollout_ref"]["rollout"]["gpu_memory_utilization"] = 0.8
+       config["actor_rollout_ref"]["rollout"]["gpu_memory_utilization"] = 0.4
        config["trainer"]["total_epochs"] = 1
        config["trainer"]["total_training_steps"] = 20
        config["trainer"]["test_freq"] = 20
@@ -210,7 +210,7 @@ def train(
        config["trainer"].pop("save_freq", None)
        if ci_fast:
            # Extra fast CI toggle for testing purposes.
-           config["actor_rollout_ref"]["rollout"]["gpu_memory_utilization"] = 0.6
+           config["actor_rollout_ref"]["rollout"]["gpu_memory_utilization"] = 0.4
            config["trainer"]["total_training_steps"] = 1
            config["trainer"]["test_freq"] = 1
     
@@ -246,7 +246,7 @@ def train(
         trainer = agl.Trainer(algorithm=algo, n_runners=n_runners, store=store, adapter=adapter)
 
     # start the training
-    trainer.fit(LitSitiAgent(), train_dataset, val_dataset=val_dataset[:1])
+    trainer.fit(LitSitiAgent(), train_dataset, val_dataset=val_dataset[:20])
 
 
 if __name__ == "__main__":
