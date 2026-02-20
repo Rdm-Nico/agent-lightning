@@ -64,7 +64,7 @@ class SitiAgent:
 
     def embed(self, prompt:str) -> list[float]:
         """Funzione per convertire un testo in embeddings"""
-        return self.embedding_model.embed(prompt=prompt, dim=512)
+        return self.embedding_model.embed(prompt=prompt, dim=256)
     
     def save_tool_response(self,extractor_response:Any, tool_id:str, tool_name:str):
         """Funzione per salvare la risposta del tool nella history del chat model"""
@@ -118,9 +118,13 @@ class LitSitiAgent(agl.LitAgent[Dict[str,Any]]):
         # e convertiamo in un json object
         clean_gt = json.loads(clean_gt_str)
         try:
+            result = self.agent.embed(clean_gt['arguments']['summary'])
+            if "error" in result['status']:
+                logger.warning(f"errore nella request per embedding: {result["status"]["error"]}")
+                return None
             gt_embed =  torch.Tensor(self.agent.embed(clean_gt['arguments']['summary'])['embeddings'][0]['embedding'])
         except KeyError as e:
-            logger.warning(f"la gt in verità è {clean_gt['arguments']}")
+            logger.debug(f"la gt in verità è {clean_gt['arguments']}")
         predict_embed = torch.Tensor(self.agent.embed(predict)['embeddings'][0]['embedding'])
         #logger.debug(gt_embed)
         # compute cosine similarity
@@ -171,7 +175,7 @@ class LitSitiAgent(agl.LitAgent[Dict[str,Any]]):
 
                 if function_name == 'extractor_expert':
                     if idx == max_turns -1:
-                        logger.warning(f"modello chiama extractor quando dovrebbe chiamare push_data: reward negativo")
+                        logger.info(f"modello chiama extractor quando dovrebbe chiamare push_data: reward negativo")
                         fail_reward -= 1.0
                         continue
                     # calcolare il reward prima di chiamara l'agent (con gli embedding)
@@ -202,24 +206,24 @@ class LitSitiAgent(agl.LitAgent[Dict[str,Any]]):
                     push_reward += self.compute_push_reward(ris_push, gt_assistant[idx])
                     #logger.debug(f"reward del push è {push_reward}")
                 else:
-                    logger.warning(f"chiamato una funzione che non esiste: {function_name}: inviare un reward negativo")
+                    logger.info(f"chiamato una funzione che non esiste: {function_name}: inviare un reward negativo")
                     fail_reward -= 1.0    
             else:
                 # reward negativo per non aver chiamato nessun tool
-                logger.warning(f"non chiamato nessun tool: inviare un reward negativo")
+                logger.info(f"non chiamato nessun tool: inviare un reward negativo")
                 fail_reward -= 1.0
         
         # normalizziamo il fail_reward:
         fail_reward  /= max_turns
         # compute final reward
         final_reward = push_reward + fail_reward + summary_rewards.mean(0).item()
-        logger.warning("+" * 30)
-        logger.warning(f"rollout id: {rollout.rollout_id}")                    
-        logger.warning(f"summary_rewards: {summary_rewards}")
-        logger.warning(f"push_reward: {push_reward}")
-        logger.warning(f"fail_reward: {fail_reward}")
-        logger.warning(f"final reward: {final_reward}")
-        logger.warning("+" * 30)
+        logger.info("+" * 30)
+        logger.info(f"rollout id: {rollout.rollout_id}")                    
+        logger.info(f"summary_rewards: {summary_rewards}")
+        logger.info(f"push_reward: {push_reward}")
+        logger.info(f"fail_reward: {fail_reward}")
+        logger.info(f"final reward: {final_reward}")
+        logger.info("+" * 30)
         logger.info(f"final reward of rollout: {rollout.rollout_id} is: {final_reward}")
         return final_reward
 

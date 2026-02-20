@@ -30,7 +30,9 @@ Per attivarla basta:
 python train_siti_agent.py --train-file data/train.parquet --val-file data/test.parquet --llm-proxy --lora --trajectory-level
 ```
 """
-
+import subprocess
+import time
+import requests
 import argparse
 import pyarrow.parquet as pq
 from datetime import datetime
@@ -52,14 +54,14 @@ def verl_default_config() -> Dict[str,Any]:
             "use_kl_in_reward": False
         },
         "data": {
-            "train_batch_size": 8,
+            "train_batch_size": 16,
             "max_prompt_length": 4096,
             "max_response_length": 2048
         },
         "actor_rollout_ref": {
             "rollout": {
                 "tensor_model_parallel_size": 1,
-                "n": 2,
+                "n": 3,
                 "log_prob_micro_batch_size_per_gpu": 2,
                 "multi_turn": {"format": "hermes"},
                 "name": "vllm",
@@ -72,8 +74,8 @@ def verl_default_config() -> Dict[str,Any]:
                 },
             },
             "actor": {
-                "ppo_mini_batch_size":8,
-                "ppo_micro_batch_size_per_gpu": 1,
+                "ppo_mini_batch_size":16,
+                "ppo_micro_batch_size_per_gpu": 2,
                 "optim": {"lr": 1e-6},
                 "use_kl_loss": False,
                 "kl_loss_coef": 0,
@@ -99,9 +101,9 @@ def verl_default_config() -> Dict[str,Any]:
             "n_gpus_per_node": 1,
             "val_before_train": True,
             "critic_warmup": 0,
-            "logger": ["console"],
+            "logger": ["console","wandb"],
             "project_name": "SitiBTAgent",
-            "experiment_name": "whatsapp_agent",
+            "experiment_name": "ft_whatsapp_agent_1",
             "nnodes": 1,
             "save_freq": 32,
             "test_freq": 16,
@@ -126,7 +128,8 @@ def train(
         trajectory_level:bool=True,
         weave:bool,
         mongo_uri:Optional[str],
-        agent_match:Optional[str]
+        agent_match:Optional[str],
+        start_embedding:bool
 ):
     """The training entrypoint function for Siti agent with VERL algorithm.
 
@@ -214,6 +217,21 @@ def train(
            config["trainer"]["total_training_steps"] = 1
            config["trainer"]["test_freq"] = 1
     
+    if start_embedding:
+        # start vllm embedding model for reward
+        cmd = [
+                    "vllm", "serve", "google/embeddinggemma-300m",
+                    "--gpu-memory-utilization", "0.05",
+                    "--max-model-len", "2048",
+                    "--max-num-seqs", "1",
+                    "--hf-overrides", '{"matryoshka_dimensions":[128,256,512,768]}',
+                    "--host", "0.0.0.0",
+                    "--port", "8001"
+            ]
+        
+        process = subprocess.Popen(cmd)
+        
+
     # add algo
     algo = agl.VERL(config)
 
@@ -246,7 +264,9 @@ def train(
         trainer = agl.Trainer(algorithm=algo, n_runners=n_runners, store=store, adapter=adapter)
 
     # start the training
-    trainer.fit(LitSitiAgent(), train_dataset, val_dataset=val_dataset[:3])
+    trainer.fit(LitSitiAgent(), train_dataset, val_dataset=val_dataset)
+
+    
 
 
 if __name__ == "__main__":
@@ -302,7 +322,11 @@ if __name__ == "__main__":
         default=None,
         help="regex agent name match for training specific agents",
     )
-    
+    parser.add_argument(
+        "--start-embedding",
+        action="store_true",
+        help="subprocess to start embedding model for reward",
+    )    
 
     args = parser.parse_args()
 
@@ -336,7 +360,9 @@ if __name__ == "__main__":
         trajectory_level=args.trajectory_level,
         weave=args.weave,
         mongo_uri=args.mongo_uri,
-        agent_match=args.agent_match
+        agent_match=args.agent_match,
+        start_embedding=args.start_embedding
     )
 
-    agl.setup_logging("DEBUG" if args.debug else "INFO") 
+    agl.setup_logging("DEBUG" if args.debug else "INFO")
+      
