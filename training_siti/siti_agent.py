@@ -23,7 +23,8 @@ class SitiAgent:
         # creiamo i due client 
         self.chat_model: vLLMClient = vLLMClient(base_url=llm_resources.endpoint)
         self.extractor_model: vLLMClient = vLLMClient(base_url=llm_resources.endpoint)
-        self.embedding_model: vLLMClient = vLLMClient(base_url="http://127.0.0.1:8001")
+        #FIXME rimetti a http://127.0.0.1:8001
+        self.embedding_model: vLLMClient = vLLMClient(base_url="http://172.18.31.238:8001")
 
         # aggiungiamo gli hyperparameters
         self.chat_model.add_options(llm_resources.sampling_parameters)
@@ -179,19 +180,17 @@ class LitSitiAgent(agl.LitAgent[Dict[str,Any]]):
                         fail_reward -= 1.0
                         continue
                     # calcolare il reward prima di chiamara l'agent (con gli embedding)
-                    summary = model_response['tool_calls']['arguments']['summary']
-                    summary_rewards = torch.cat((summary_rewards,self.compute_summary_reward(summary, gt_assistant[idx]).reshape(1)))
-                    extractor_response = self.agent.extract(summary)
-                    if extractor_response is None:
-                        # errore nella risposta dell'extractor, forniamo un reward pari a zero e continuiamo
-                        # anche se dopo non sappiamo come si comporterà magari sarebbe da stoppare l'episodio ma vediamo
-                        #agl.emit_reward(0)
+                    try:
+                        summary = model_response['tool_calls']['arguments']['summary']
+                    
+                        summary_rewards = torch.cat((summary_rewards,self.compute_summary_reward(summary, gt_assistant[idx]).reshape(1)))
+                        extractor_response = self.agent.extract(summary)
+                    except Exception as e:
+                        logger.warning(f"il modello ha ritonato un errore: {str(e)} per la response:\n {model_response}\n ritorna un errore di -1")
+                        fail_reward -= 1.0
                         continue
-                    #logger.debug(f"extractor response of turn {idx}: {extractor_response}")
-
 
                     
-                    #mid_reward = self.compute_extractor_reward(extractor_response,gt_extractor[idx])
                     
                     # inseriamo nella history la risposta del extractor come un tool
                     self.agent.save_tool_response(extractor_response.model_dump_json(),tool_call_id,function_name) 
@@ -203,7 +202,11 @@ class LitSitiAgent(agl.LitAgent[Dict[str,Any]]):
                         break
                     ris_push = model_response['tool_calls']['arguments']
                     # controlliamo se corrisponde alla gt
-                    push_reward += self.compute_push_reward(ris_push, gt_assistant[idx])
+                    try:
+                        push_reward += self.compute_push_reward(ris_push, gt_assistant[idx])
+                    except TypeError as e:
+                        logger.warning(f"rollout: {rollout.rollout_id} ha ritornato un errore di tipo: {str(e)} con la response del modello:\n{model_response}")
+                        push_reward = push_reward - 3.0
                     #logger.debug(f"reward del push è {push_reward}")
                 else:
                     logger.info(f"chiamato una funzione che non esiste: {function_name}: inviare un reward negativo")
@@ -216,7 +219,13 @@ class LitSitiAgent(agl.LitAgent[Dict[str,Any]]):
         # normalizziamo il fail_reward:
         fail_reward  /= max_turns
         # compute final reward
-        final_reward = push_reward + fail_reward + summary_rewards.mean(0).item()
+        # check first if summary_rewards ha dei valori se no il final_reward sarà nan e questo bloccherà il training
+        if summary_rewards.numel() != 0:
+            final_reward = push_reward + fail_reward + summary_rewards.mean(0).item()
+        else:
+            # se non abbiamo salvato nessuna dato allora il final reward deve essere molto negativo 
+            final_reward = - 10
+        
         logger.info("+" * 30)
         logger.info(f"rollout id: {rollout.rollout_id}")                    
         logger.info(f"summary_rewards: {summary_rewards}")
@@ -240,7 +249,7 @@ def debug_siti_agent(args:Any):
         return
     table = pq.read_table(args.train_file)
 
-    df = cast(List[Dict[str, Any]], table.to_pylist()[:3])
+    df = cast(List[Dict[str, Any]], table.to_pylist())
     logger.debug(f"Debug data: {df}")
     
 
