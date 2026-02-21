@@ -105,6 +105,8 @@ def verl_default_config() -> Dict[str,Any]:
             "project_name": "SitiBTAgent",
             "experiment_name": "ft_whatsapp_agent_1",
             "nnodes": 1,
+            "max_actor_ckpt_to_keep": 2,
+            "max_critic_ckpt_to_keep": 1,
             "save_freq": 32,
             "test_freq": 16,
             "total_epochs": 2
