@@ -61,11 +61,11 @@ def verl_default_config() -> Dict[str,Any]:
         "actor_rollout_ref": {
             "rollout": {
                 "tensor_model_parallel_size": 1,
-                "n": 3,
-                "log_prob_micro_batch_size_per_gpu": 2,
+                "n": 4,
+                "log_prob_micro_batch_size_per_gpu": 4,
                 "multi_turn": {"format": "hermes"},
                 "name": "vllm",
-                "gpu_memory_utilization": 0.4,
+                "gpu_memory_utilization": 0.5,
                 "engine_kwargs": {
                     "vllm": {
                         "enable_auto_tool_choice": True,
@@ -88,7 +88,7 @@ def verl_default_config() -> Dict[str,Any]:
                 }
             },
             "ref": {
-                "log_prob_micro_batch_size_per_gpu": 2,
+                "log_prob_micro_batch_size_per_gpu": 4,
                 "fsdp_config": {"param_offload": True}
             },
             "model": {
@@ -101,9 +101,9 @@ def verl_default_config() -> Dict[str,Any]:
             "n_gpus_per_node": 1,
             "val_before_train": True,
             "critic_warmup": 0,
-            "logger": ["console","wandb"],
+            "logger": ["console","tensorboard"],
             "project_name": "SitiBTAgent",
-            "experiment_name": "ft_whatsapp_agent_1",
+            "experiment_name": "ft_chat_agent_1",
             "nnodes": 1,
             "max_actor_ckpt_to_keep": 2,
             "max_critic_ckpt_to_keep": 1,

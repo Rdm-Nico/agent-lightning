@@ -23,8 +23,8 @@ class SitiAgent:
         # creiamo i due client 
         self.chat_model: vLLMClient = vLLMClient(base_url=llm_resources.endpoint)
         self.extractor_model: vLLMClient = vLLMClient(base_url=llm_resources.endpoint)
-        #FIXME rimetti a http://127.0.0.1:8001
-        self.embedding_model: vLLMClient = vLLMClient(base_url="http://172.18.31.238:8001")
+        
+        self.embedding_model: vLLMClient = vLLMClient(base_url="http://127.0.0.1:8001")
 
         # aggiungiamo gli hyperparameters
         self.chat_model.add_options(llm_resources.sampling_parameters)

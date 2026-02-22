@@ -1,3 +1,5 @@
+# model checkpoint 
+/checkpoints
 # Agentlightning specific files
 verl_old
 meta-llama/**
