@@ -54,7 +54,7 @@ def verl_default_config() -> Dict[str,Any]:
             "use_kl_in_reward": False
         },
         "data": {
-            "train_batch_size": 16,
+            "train_batch_size": 64,
             "max_prompt_length": 4096,
             "max_response_length": 2048
         },
@@ -62,7 +62,7 @@ def verl_default_config() -> Dict[str,Any]:
             "rollout": {
                 "tensor_model_parallel_size": 1,
                 "n": 4,
-                "log_prob_micro_batch_size_per_gpu": 4,
+                "log_prob_micro_batch_size_per_gpu": 32,
                 "multi_turn": {"format": "hermes"},
                 "name": "vllm",
                 "gpu_memory_utilization": 0.5,
@@ -75,8 +75,8 @@ def verl_default_config() -> Dict[str,Any]:
             },
             "actor": {
                 "ppo_mini_batch_size":16,
-                "ppo_micro_batch_size_per_gpu": 2,
-                "optim": {"lr": 1e-6},
+                "ppo_micro_batch_size_per_gpu": 16,
+                "optim": {"lr": 3e-6},
                 "use_kl_loss": False,
                 "kl_loss_coef": 0,
                 "entropy_coeff": 0,
@@ -88,11 +88,11 @@ def verl_default_config() -> Dict[str,Any]:
                 }
             },
             "ref": {
-                "log_prob_micro_batch_size_per_gpu": 4,
+                "log_prob_micro_batch_size_per_gpu": 32,
                 "fsdp_config": {"param_offload": True}
             },
             "model": {
-                "path": "Qwen/Qwen3-4B",
+                "path": "Qwen/Qwen3-4B-Instruct-2507",
                 "use_remove_padding": True,
                 "enable_gradient_checkpointing": True
             }
@@ -101,12 +101,11 @@ def verl_default_config() -> Dict[str,Any]:
             "n_gpus_per_node": 1,
             "val_before_train": True,
             "critic_warmup": 0,
-            "logger": ["console","tensorboard"],
+            "logger": ["console","mlflow"],
             "project_name": "SitiBTAgent",
             "experiment_name": "ft_chat_agent_1",
             "nnodes": 1,
             "max_actor_ckpt_to_keep": 2,
-            "max_critic_ckpt_to_keep": 1,
             "save_freq": 32,
             "test_freq": 16,
             "total_epochs": 2

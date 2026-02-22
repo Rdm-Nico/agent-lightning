@@ -9,4 +9,6 @@ python training_siti/train_siti_agent.py \
     --trajectory-level \
     --n-runners 10 \
     --agent-match chat \
-    --start-embedding
+    --start-embedding \
+    --ci \
+    --ci-fast \
