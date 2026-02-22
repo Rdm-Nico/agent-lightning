@@ -54,7 +54,7 @@ def verl_default_config() -> Dict[str,Any]:
             "use_kl_in_reward": False
         },
         "data": {
-            "train_batch_size": 64,
+            "train_batch_size": 54,
             "max_prompt_length": 4096,
             "max_response_length": 2048
         },
@@ -75,7 +75,7 @@ def verl_default_config() -> Dict[str,Any]:
             },
             "actor": {
                 "ppo_mini_batch_size":16,
-                "ppo_micro_batch_size_per_gpu": 16,
+                "ppo_micro_batch_size_per_gpu": 8,
                 "optim": {"lr": 3e-6},
                 "use_kl_loss": False,
                 "kl_loss_coef": 0,
@@ -214,7 +214,7 @@ def train(
        config["trainer"].pop("save_freq", None)
        if ci_fast:
            # Extra fast CI toggle for testing purposes.
-           config["actor_rollout_ref"]["rollout"]["gpu_memory_utilization"] = 0.4
+           config["actor_rollout_ref"]["rollout"]["gpu_memory_utilization"] = 0.5
            config["trainer"]["total_training_steps"] = 1
            config["trainer"]["test_freq"] = 1
     

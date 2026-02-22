@@ -529,7 +529,7 @@ class vLLMClient(InferenceClient):
 
         self.logger.info(f"   model name: {model_name}")
         # test connessione
-        self.test_connection()
+        #self.test_connection()
         
 
 
