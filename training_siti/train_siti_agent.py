@@ -54,15 +54,15 @@ def verl_default_config() -> Dict[str,Any]:
             "use_kl_in_reward": False
         },
         "data": {
-            "train_batch_size": 54,
+            "train_batch_size": 40,
             "max_prompt_length": 4096,
-            "max_response_length": 2048
+            "max_response_length": 1024
         },
         "actor_rollout_ref": {
             "rollout": {
                 "tensor_model_parallel_size": 1,
-                "n": 4,
-                "log_prob_micro_batch_size_per_gpu": 32,
+                "n": 5,
+                "log_prob_micro_batch_size_per_gpu": 4,
                 "multi_turn": {"format": "hermes"},
                 "name": "vllm",
                 "gpu_memory_utilization": 0.5,
@@ -74,21 +74,22 @@ def verl_default_config() -> Dict[str,Any]:
                 },
             },
             "actor": {
-                "ppo_mini_batch_size":16,
-                "ppo_micro_batch_size_per_gpu": 8,
+                "ppo_mini_batch_size":20,
+                "ppo_micro_batch_size_per_gpu": 4,
                 "optim": {"lr": 3e-6},
                 "use_kl_loss": False,
                 "kl_loss_coef": 0,
                 "entropy_coeff": 0,
                 "clip_ratio_low": 0.2,
                 "clip_ratio_high": 0.3,
+                "strategy": "fsdp2",
                 "fsdp_config": {
                     "param_offload": True,
                     "optimizer_offload": True
                 }
             },
             "ref": {
-                "log_prob_micro_batch_size_per_gpu": 32,
+                "log_prob_micro_batch_size_per_gpu": 4,
                 "fsdp_config": {"param_offload": True}
             },
             "model": {
@@ -103,12 +104,12 @@ def verl_default_config() -> Dict[str,Any]:
             "critic_warmup": 0,
             "logger": ["console","mlflow"],
             "project_name": "SitiBTAgent",
-            "experiment_name": "ft_chat_agent_1",
+            "experiment_name": "ft_chat_agent_2",
             "nnodes": 1,
             "max_actor_ckpt_to_keep": 2,
             "save_freq": 32,
             "test_freq": 16,
-            "total_epochs": 2
+            "total_epochs": 5
         }
     }
     return config

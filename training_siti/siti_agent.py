@@ -258,7 +258,7 @@ def debug_siti_agent(args:Any):
         initial_resources={
             "main_llm": agl.LLM(
                 endpoint=args.vllm_endpoint,
-                model="unsloth/granite-4.0-micro-unsloth-bnb-4bit",
+                model="Qwen/Qwen3-4B-Instruct-2507",
                 sampling_parameters={"temperature": 0.7}    
             )
         },
