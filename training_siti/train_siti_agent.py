@@ -54,28 +54,32 @@ def verl_default_config() -> Dict[str,Any]:
             "use_kl_in_reward": False
         },
         "data": {
-            "train_batch_size": 40,
-            "max_prompt_length": 4096,
-            "max_response_length": 1024
+            "train_batch_size": 70,
+            "max_prompt_length": 2048,
+            "max_response_length": 2048
         },
         "actor_rollout_ref": {
             "rollout": {
                 "tensor_model_parallel_size": 1,
                 "n": 5,
-                "log_prob_micro_batch_size_per_gpu": 4,
+                "log_prob_max_token_len_per_gpu":16384, 
+                "log_prob_micro_batch_size_per_gpu": 7,
                 "multi_turn": {"format": "hermes"},
                 "name": "vllm",
-                "gpu_memory_utilization": 0.5,
+                "gpu_memory_utilization": 0.6,
                 "engine_kwargs": {
                     "vllm": {
                         "enable_auto_tool_choice": True,
-                        "tool_call_parser": "hermes"
+                        "tool_call_parser": "hermes",
+                        "max_num_batched_tokens": 4096
                     }
                 },
             },
             "actor": {
-                "ppo_mini_batch_size":20,
-                "ppo_micro_batch_size_per_gpu": 4,
+                "ppo_mini_batch_size":14,
+                "ppo_micro_batch_size_per_gpu": 7,
+                "ppo_max_token_len_per_gpu": 10240,
+                "use_dynamic_bsz":True,
                 "optim": {"lr": 3e-6},
                 "use_kl_loss": False,
                 "kl_loss_coef": 0,
@@ -89,7 +93,9 @@ def verl_default_config() -> Dict[str,Any]:
                 }
             },
             "ref": {
-                "log_prob_micro_batch_size_per_gpu": 4,
+                "log_prob_micro_batch_size_per_gpu": 7,
+                "use_dynamic_bsz":True,
+                "log_prob_max_token_len_per_gpu":16384,
                 "fsdp_config": {"param_offload": True}
             },
             "model": {
@@ -104,12 +110,12 @@ def verl_default_config() -> Dict[str,Any]:
             "critic_warmup": 0,
             "logger": ["console","mlflow"],
             "project_name": "SitiBTAgent",
-            "experiment_name": "ft_chat_agent_2",
+            "experiment_name": "ft_chat_agent_3",
             "nnodes": 1,
             "max_actor_ckpt_to_keep": 2,
             "save_freq": 32,
             "test_freq": 16,
-            "total_epochs": 5
+            "total_epochs": 7
         }
     }
     return config
@@ -182,7 +188,8 @@ def train(
             "trace_aggregator": {
                 "level": "trajectory",
                 "trajectory_max_prompt_length": 2048,
-                "trajectory_max_response_length": 8192
+                "trajectory_max_response_length": 8192,
+                "debug": True
             }
         }
         logger.info("Trajectory level enabled in trace aggregator")
@@ -224,8 +231,8 @@ def train(
         cmd = [
                     "vllm", "serve", "google/embeddinggemma-300m",
                     "--gpu-memory-utilization", "0.05",
-                    "--max-model-len", "2048",
-                    "--max-num-seqs", "1",
+                    "--max-model-len", "1024",
+                    "--max-num-seqs", "4",
                     "--hf-overrides", '{"matryoshka_dimensions":[128,256,512,768]}',
                     "--host", "0.0.0.0",
                     "--port", "8001"
