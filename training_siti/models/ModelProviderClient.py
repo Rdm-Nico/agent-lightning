@@ -527,7 +527,7 @@ class vLLMClient(InferenceClient):
         # init cartella cronologia
         self.history_folder = 'history/'
 
-        self.logger.info(f"   model name: {model_name}")
+        self.logger.debug(f"   model name: {model_name}")
         # test connessione
         #self.test_connection()
         
@@ -715,10 +715,18 @@ class vLLMClient(InferenceClient):
                     'content': message
                 })
                 if len(msg_response.tool_calls) > 0:
+                    tool_call = msg_response.tool_calls[0]
                     # salviamo anche la chiamata al tool
                     self.conversation_history[self.model].append({
-                    'role': 'assistant',
-                    'tool_calls': msg_response.tool_calls
+                        'role': 'assistant',
+                        'tool_calls': [{
+                            'id': tool_call.id,
+                            'type': tool_call.type,
+                            'function': {
+                                'name': tool_call.function.name,
+                                'arguments': tool_call.function.arguments
+                            }
+                        }]
                     })
                 else:
                     # salviamo solo il messaggio

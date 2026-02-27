@@ -59,8 +59,21 @@ class SitiAgent:
             json_response = json.loads(model_response)
             model_predict = Tecnico.model_validate_json(json.dumps(json_response))
         except Exception as e:
-            self.logger.error({"error": f"Errore: {str(e)}\n model_response: {model_response['content']}"})
-            return None
+            # proviamo a fare un altro tentativo
+            model_response = self.extractor_model.chat(message=msg, schema=Tecnico, user="extractor")
+            if "error" in model_response['status']:
+                logger.error(f"errore nuovamente, passiamo avanti: {model_response["status"]["error"]}")
+                return None
+            # puliamo da eventuali json tag non desiderati
+            model_response = clean_response(model_response['content'])
+            # castiamo e controlliamo i campi
+            try: 
+                json_response = json.loads(model_response)
+                model_predict = Tecnico.model_validate_json(json.dumps(json_response))
+            except Exception as e:
+                logger.error({"error": f"Errore: {str(e)}\n model_response: {model_response}, ritorniamo None e continuiamo"})
+                return None
+        
         return model_predict
 
     def embed(self, prompt:str) -> list[float]:
@@ -91,9 +104,23 @@ class LitSitiAgent(agl.LitAgent[Dict[str,Any]]):
             logger.error(f"la ground truth è non simmetrica con i dati: {gt}")
             return 0.0
         if clean_gt['arguments']['push'] == bool(response['push']):
-            return 3.0
+            # abbassiamo il premio della push per evitare che il modello chiami solo questo
+            return 2
         else:
-            return -1.0
+            return 0
+
+    def return_gt_extractor(self, gt:Dict[str, Any])-> Tecnico|None:
+        # estraiamo le ground truth
+        clean_gt_str =  re.sub(r"<TOOLCALL>\[(.*?)\]</TOOLCALL>\n?",r"\1", gt['content'])
+        # e convertiamo in un json object
+        clean_gt = json.loads(clean_gt_str)
+        # convertiamo nel modello
+        try: 
+                gt_model = Tecnico.model_validate_json(clean_gt)
+        except Exception as e:
+            logger.error({"error": f"Errore: {str(e)}\n gt: {gt}"})
+            return None
+        return gt_model
 
     def compute_extractor_reward(self, response:Tecnico,gt:Dict[str, Any], metric='all')-> float:
         """Funzione per calcolare i verifiable reward dell extractor model"""
@@ -124,9 +151,12 @@ class LitSitiAgent(agl.LitAgent[Dict[str,Any]]):
                 logger.warning(f"errore nella request per embedding: {result["status"]["error"]}")
                 return None
             gt_embed =  torch.Tensor(self.agent.embed(clean_gt['arguments']['summary'])['embeddings'][0]['embedding'])
-        except KeyError as e:
-            logger.debug(f"la gt in verità è {clean_gt['arguments']}")
-        predict_embed = torch.Tensor(self.agent.embed(predict)['embeddings'][0]['embedding'])
+        except Exception as e:
+            logger.error(f"la gt in verità è {clean_gt['arguments']}")
+        try:
+            predict_embed = torch.Tensor(self.agent.embed(predict)['embeddings'][0]['embedding'])
+        except Exception as e:
+            logger.error(f"errore nel embed del tensore del predict")
         #logger.debug(gt_embed)
         # compute cosine similarity
         cos = torch.nn.CosineSimilarity(dim=0, eps=1e-6)
@@ -149,10 +179,11 @@ class LitSitiAgent(agl.LitAgent[Dict[str,Any]]):
         # init agent
         self.agent:SitiAgent = SitiAgent(llm)
 
+        fail_tool_reward = 0
         fail_reward = 0
         summary_rewards = torch.Tensor([]) 
         push_reward = 0
-        
+        turn_reward = 0
         
         user_prompts = task["prompt"]
         max_turns = task['extra_info']['user_msg_length']
@@ -176,61 +207,80 @@ class LitSitiAgent(agl.LitAgent[Dict[str,Any]]):
 
                 if function_name == 'extractor_expert':
                     if idx == max_turns -1:
-                        logger.info(f"modello chiama extractor quando dovrebbe chiamare push_data: reward negativo")
-                        fail_reward -= 1.0
-                        continue
+                        logger.info(f"modello chiama extractor quando dovrebbe chiamare push_data: reward nullo e blocco")
+                        break
+                    # gli forniamo un reward di più uno perché a chiamato il tool nel momento adatto
+                    turn_reward += 1
                     # calcolare il reward prima di chiamara l'agent (con gli embedding)
                     try:
                         summary = model_response['tool_calls']['arguments']['summary']
-                    
-                        summary_rewards = torch.cat((summary_rewards,self.compute_summary_reward(summary, gt_assistant[idx]).reshape(1)))
-                        extractor_response = self.agent.extract(summary)
                     except Exception as e:
-                        logger.warning(f"il modello ha ritonato un errore: {str(e)} per la response:\n {model_response}\n ritorna un errore di -1")
-                        fail_reward -= 1.0
-                        continue
-
+                        logger.error(f"il modello ha ritonato un errore: {str(e)} per la response:\n {model_response}\n blocchiamo l'iterazione")
+                        break
+                    try:
+                        summary_rewards = torch.cat((summary_rewards,self.compute_summary_reward(summary, gt_assistant[idx]).reshape(1)))
+                    except Exception as e:
+                        logger.warning(f"il modello ha ritonato un errore: {str(e)} per la response:\n {model_response}\n blocchiamo l'iterazione")
+                        break
                     
+                    extractor_response = self.agent.extract(summary)
+                    if extractor_response == None:
+                        logger.warning(f"il modello estrattore è andato in errore, in questi casi limitati utilizziamo la gt")
+                        extractor_response = self.return_gt_extractor(gt_extractor[idx])
+                        if extractor_response == None:
+                            logger.error(f"la gt non è stata riuscita ad inserire nel modello Pydantic, continuiamo come nulla fosse")
+                            continue
+                    """ except Exception as e:
+                        logger.warning(f"il modello ha ritonato un errore: {str(e)} per la response:\n {model_response}\n blocchiamo l'iterazione")
+                        break """
+
                     
                     # inseriamo nella history la risposta del extractor come un tool
                     self.agent.save_tool_response(extractor_response.model_dump_json(),tool_call_id,function_name) 
 
                 elif function_name == 'push_data':
                     if idx != max_turns - 1:
-                        logger.warning(f"il push tool è stato chiamato prima del previsto. inviamo un reward negativo più grande")
-                        fail_reward -= 3.0
+                        logger.warning(f"il push tool è stato chiamato prima del previsto. blocchiamo l'iterazione")
                         break
+                    # gli forniamo un reward di più uno perché a chiamato il tool nel momento adatto
+                    turn_reward += 1
                     ris_push = model_response['tool_calls']['arguments']
                     # controlliamo se corrisponde alla gt
                     try:
                         push_reward += self.compute_push_reward(ris_push, gt_assistant[idx])
                     except TypeError as e:
                         logger.warning(f"rollout: {rollout.rollout_id} ha ritornato un errore di tipo: {str(e)} con la response del modello:\n{model_response}")
-                        push_reward = push_reward - 3.0
+                        push_reward = 0
                     #logger.debug(f"reward del push è {push_reward}")
                 else:
-                    logger.info(f"chiamato una funzione che non esiste: {function_name}: inviare un reward negativo")
-                    fail_reward -= 1.0    
+                    logger.info(f"chiamato una funzione che non esiste: {function_name}: blocchiamo iterazione")
+                    break    
             else:
                 # reward negativo per non aver chiamato nessun tool
-                logger.info(f"non chiamato nessun tool: inviare un reward negativo")
-                fail_reward -= 1.0
+                logger.info(f"non chiamato nessun tool: blocchiamo iterazione e diamo i reward fino ad ora")
+                break
         
         # normalizziamo il fail_reward:
         fail_reward  /= max_turns
         # compute final reward
+        if fail_tool_reward != 0:
+            # forniamo come final reward solo quello 
+            final_reward = fail_tool_reward
         # check first if summary_rewards ha dei valori se no il final_reward sarà nan e questo bloccherà il training
-        if summary_rewards.numel() != 0:
-            final_reward = push_reward + fail_reward + summary_rewards.mean(0).item()
+        elif summary_rewards.numel() != 0:
+            final_reward = push_reward + fail_reward + summary_rewards.mean(0).item()  + turn_reward
         else:
-            # se non abbiamo salvato nessuna dato allora il final reward deve essere molto negativo 
-            final_reward = - 10
+            # se non abbiamo salvato nessuna dato allora il final reward deve essere nullo 
+            final_reward = 0
         
         logger.info("+" * 30)
-        logger.info(f"rollout id: {rollout.rollout_id}")                    
+        logger.info(f"rollout id: {rollout.rollout_id}")
+        logger.info(f"msg length: {max_turns}")
+        logger.info(f"turn reward: {turn_reward}")                    
         logger.info(f"summary_rewards: {summary_rewards}")
         logger.info(f"push_reward: {push_reward}")
         logger.info(f"fail_reward: {fail_reward}")
+        logger.info(f"fail_tool_reward: {fail_tool_reward}")
         logger.info(f"final reward: {final_reward}")
         logger.info("+" * 30)
         logger.info(f"final reward of rollout: {rollout.rollout_id} is: {final_reward}")

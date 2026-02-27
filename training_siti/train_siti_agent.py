@@ -54,16 +54,16 @@ def verl_default_config() -> Dict[str,Any]:
             "use_kl_in_reward": False
         },
         "data": {
-            "train_batch_size": 70,
-            "max_prompt_length": 2048,
+            "train_batch_size": 40,
+            "max_prompt_length": 4096,
             "max_response_length": 2048
         },
         "actor_rollout_ref": {
             "rollout": {
                 "tensor_model_parallel_size": 1,
-                "n": 5,
+                "n": 8,
                 "log_prob_max_token_len_per_gpu":16384, 
-                "log_prob_micro_batch_size_per_gpu": 7,
+                "log_prob_micro_batch_size_per_gpu": 10,
                 "multi_turn": {"format": "hermes"},
                 "name": "vllm",
                 "gpu_memory_utilization": 0.6,
@@ -76,16 +76,16 @@ def verl_default_config() -> Dict[str,Any]:
                 },
             },
             "actor": {
-                "ppo_mini_batch_size":14,
-                "ppo_micro_batch_size_per_gpu": 7,
+                "ppo_mini_batch_size":20,
+                "ppo_micro_batch_size_per_gpu": 5,
                 "ppo_max_token_len_per_gpu": 10240,
                 "use_dynamic_bsz":True,
-                "optim": {"lr": 3e-6},
-                "use_kl_loss": False,
-                "kl_loss_coef": 0,
-                "entropy_coeff": 0,
+                "optim": {"lr": 1e-6},
+                "use_kl_loss": True,
+                "kl_loss_coef": 0.02,
+                "entropy_coeff": 0.05,
                 "clip_ratio_low": 0.2,
-                "clip_ratio_high": 0.3,
+                "clip_ratio_high": 0.2,
                 "strategy": "fsdp2",
                 "fsdp_config": {
                     "param_offload": True,
@@ -93,7 +93,7 @@ def verl_default_config() -> Dict[str,Any]:
                 }
             },
             "ref": {
-                "log_prob_micro_batch_size_per_gpu": 7,
+                "log_prob_micro_batch_size_per_gpu": 10,
                 "use_dynamic_bsz":True,
                 "log_prob_max_token_len_per_gpu":16384,
                 "fsdp_config": {"param_offload": True}
@@ -110,12 +110,12 @@ def verl_default_config() -> Dict[str,Any]:
             "critic_warmup": 0,
             "logger": ["console","mlflow"],
             "project_name": "SitiBTAgent",
-            "experiment_name": "ft_chat_agent_3",
+            "experiment_name": "ft_chat_agent_4",
             "nnodes": 1,
             "max_actor_ckpt_to_keep": 2,
             "save_freq": 32,
-            "test_freq": 16,
-            "total_epochs": 7
+            "test_freq": 10,
+            "total_epochs": 3
         }
     }
     return config
@@ -189,7 +189,6 @@ def train(
                 "level": "trajectory",
                 "trajectory_max_prompt_length": 2048,
                 "trajectory_max_response_length": 8192,
-                "debug": True
             }
         }
         logger.info("Trajectory level enabled in trace aggregator")
