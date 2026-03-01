@@ -39,6 +39,7 @@ from datetime import datetime
 import uuid
 from typing import Any, Dict, Optional, cast, List
 from siti_agent import LitSitiAgent
+from siti_agent_train_extractor import LitSitiExtractor
 import agentlightning as agl
 from agentlightning.env_var import LightningEnvVar, resolve_bool_env_var, resolve_str_env_var
 from utils.logger import Logger
@@ -47,7 +48,7 @@ import os
 
 logger = Logger(save=False, consoleLevel="WARNING").getLogger()
 
-def verl_default_config() -> Dict[str,Any]:
+def verl_agent_config() -> Dict[str,Any]:
     config = {
         "algorithm": {
             "adv_estimator": "grpo",
@@ -108,9 +109,79 @@ def verl_default_config() -> Dict[str,Any]:
             "n_gpus_per_node": 1,
             "val_before_train": True,
             "critic_warmup": 0,
-            "logger": ["console","mlflow"],
+            "logger": ["console","wandb"],
             "project_name": "SitiBTAgent",
             "experiment_name": "ft_chat_agent_4",
+            "nnodes": 1,
+            "max_actor_ckpt_to_keep": 2,
+            "save_freq": 32,
+            "test_freq": 10,
+            "total_epochs": 3
+        }
+    }
+    return config
+
+def verl_extractor_config() -> Dict[str,Any]:
+    config = {
+        "algorithm": {
+            "adv_estimator": "grpo",
+            "use_kl_in_reward": False
+        },
+        "data": {
+            "train_batch_size": 64,
+            "max_prompt_length": 2048,
+            "max_response_length": 512
+        },
+        "actor_rollout_ref": {
+            "rollout": {
+                "tensor_model_parallel_size": 1,
+                "n": 8,
+                "log_prob_max_token_len_per_gpu":16384, 
+                "log_prob_micro_batch_size_per_gpu": 4,
+                "name": "vllm",
+                "gpu_memory_utilization": 0.6,
+                "engine_kwargs": {
+                    "vllm": {
+                        "max_num_batched_tokens": 4096
+                    }
+                },
+            },
+            "actor": {
+                "ppo_mini_batch_size":32,
+                "ppo_micro_batch_size_per_gpu": 4,
+                "ppo_max_token_len_per_gpu": 10240,
+                "use_dynamic_bsz":True,
+                "optim": {"lr": 1e-6},
+                "use_kl_loss": True,
+                "kl_loss_coef": 0.02,
+                "entropy_coeff": 0.05,
+                "clip_ratio_low": 0.2,
+                "clip_ratio_high": 0.2,
+                "strategy": "fsdp2",
+                "fsdp_config": {
+                    "param_offload": True,
+                    "optimizer_offload": True
+                }
+            },
+            "ref": {
+                "log_prob_micro_batch_size_per_gpu": 4,
+                "use_dynamic_bsz":True,
+                "log_prob_max_token_len_per_gpu":16384,
+                "fsdp_config": {"param_offload": True}
+            },
+            "model": {
+                "path": "Qwen/Qwen3-4B-Instruct-2507",
+                "use_remove_padding": True,
+                "enable_gradient_checkpointing": True
+            }
+        },
+        "trainer": {
+            "n_gpus_per_node": 1,
+            "val_before_train": True,
+            "critic_warmup": 0,
+            "logger": ["console","wandb"],
+            "project_name": "SitiBTAgent",
+            "experiment_name": "ft_extractor_1",
             "nnodes": 1,
             "max_actor_ckpt_to_keep": 2,
             "save_freq": 32,
@@ -137,7 +208,8 @@ def train(
         weave:bool,
         mongo_uri:Optional[str],
         agent_match:Optional[str],
-        start_embedding:bool
+        start_embedding:bool,
+        base_config:Optional[str]
 ):
     """The training entrypoint function for Siti agent with VERL algorithm.
 
@@ -167,7 +239,18 @@ def train(
     logger.info(f"first 1 row of validation dataset: {val_dataset[0]}")
 
     # add verl config
-    config = verl_default_config()
+    match(base_config):
+        case "agent": 
+            config = verl_agent_config()
+            agent = LitSitiAgent()
+        case "extractor": 
+            config = verl_extractor_config()
+            agent = LitSitiExtractor() 
+        case _: 
+                logger.info("not specify config, using verl agent config")
+                config = verl_extractor_config()
+                agent = LitSitiAgent()
+    
 
     if model:
         config["actor_rollout_ref"]["model"]["path"] = model
@@ -237,7 +320,7 @@ def train(
                     "--port", "8001"
             ]
         
-        process = subprocess.Popen(cmd)
+        _ = subprocess.Popen(cmd)
         
 
     # add algo
@@ -272,7 +355,7 @@ def train(
         trainer = agl.Trainer(algorithm=algo, n_runners=n_runners, store=store, adapter=adapter)
 
     # start the training
-    trainer.fit(LitSitiAgent(), train_dataset, val_dataset=val_dataset)
+    trainer.fit(agent, train_dataset, val_dataset=val_dataset)
 
     
 
@@ -325,6 +408,12 @@ if __name__ == "__main__":
         help="MongoDB URI to use for the store.",
     )
     parser.add_argument(
+        "--base-config",
+        type=str,
+        default=None,
+        help="base config file to use",
+    )
+    parser.add_argument(
         "--agent-match",
         type=str,
         default=None,
@@ -369,7 +458,8 @@ if __name__ == "__main__":
         weave=args.weave,
         mongo_uri=args.mongo_uri,
         agent_match=args.agent_match,
-        start_embedding=args.start_embedding
+        start_embedding=args.start_embedding,
+        base_config=args.base_config
     )
 
     agl.setup_logging("DEBUG" if args.debug else "INFO")

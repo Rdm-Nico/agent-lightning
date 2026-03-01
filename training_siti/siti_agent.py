@@ -116,7 +116,7 @@ class LitSitiAgent(agl.LitAgent[Dict[str,Any]]):
         clean_gt = json.loads(clean_gt_str)
         # convertiamo nel modello
         try: 
-                gt_model = Tecnico.model_validate_json(clean_gt)
+                gt_model = Tecnico.model_validate_json(clean_gt_str)
         except Exception as e:
             logger.error({"error": f"Errore: {str(e)}\n gt: {gt}"})
             return None

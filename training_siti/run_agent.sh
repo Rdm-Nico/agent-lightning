@@ -8,5 +8,6 @@ python training_siti/train_siti_agent.py \
     --lora-rank 16 \
     --trajectory-level \
     --n-runners 10 \
+    --config agent \
     --agent-match chat \
     --start-embedding  

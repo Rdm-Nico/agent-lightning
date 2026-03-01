@@ -1,9 +1,11 @@
 import agentlightning as agl
-from siti_agent import LitSitiAgent
+from siti_agent_train_extractor import LitSitiExtractor
 import pyarrow.parquet as pq
 from typing import cast, List, Dict, Any
+from utils.logger import Logger
 import asyncio
-agl.setup_logging("DEBUG")
+agl.setup_logging("WARNING")
+logger = Logger(save=False, consoleLevel="INFO").getLogger()
 
 
 
@@ -14,16 +16,16 @@ async def runner():
     runner = agl.LitAgentRunner(tracer)
     store = agl.LightningStoreClient("http://127.0.0.1:4747")
 
-    table = pq.read_table("./training_siti/data/train.parquet")
+    table = pq.read_table("./data/train_extractor.parquet")
     df = cast(List[Dict[str, Any]], table.to_pylist()[:10])
-    print(f"running rollout with input task: {df[0]}")
-    with runner.run_context(agent=LitSitiAgent(), store=store):
+    print(f"running rollout with input task: {df[2]}")
+    with runner.run_context(agent=LitSitiExtractor(), store=store):
         rollout = await runner.step(
-            df[5],
+            df[2],
             resources={
             "main_llm": agl.LLM(
                 endpoint="http://127.0.0.1:8000",
-                model="unsloth/granite-4.0-micro-unsloth-bnb-4bit",
+                model="Qwen/Qwen3-4B-Instruct-2507",
                 sampling_parameters={"temperature": 0.7}    
             )
         },
@@ -31,10 +33,8 @@ async def runner():
 
         # query the store
         spans = await store.query_spans(rollout.rollout_id)
-        """ adapter = TraceToDictAdapter()
-        result = adapter.adapt(spans=spans)
-        print(result) """
-        adapter = agl.TracerTraceToTriplet(agent_match="chat", match_w_itself=True)
+        
+        adapter = agl.TracerTraceToTriplet()
 
         # convert span in trajectory
         #adapter.visualize(spans)

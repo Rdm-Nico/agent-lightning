@@ -643,14 +643,14 @@ class vLLMClient(InferenceClient):
         Genera gli embedding usando l'API /v1/embedding
         """
         try:
-            respose = self.client.embeddings.create(
+            response = self.client.embeddings.create(
                 input=prompt, dimensions=dim, model=self.model
             )
             
             if verbose:
-                return respose
+                return response
             embeddings = []
-            for emb in respose.data:
+            for emb in response.data:
                 embeddings.append({"embedding": emb.embedding})
             return self.generate_output(status="success", embeddings=embeddings)
         except Exception as e:
