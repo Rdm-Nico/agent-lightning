@@ -116,7 +116,7 @@ class LitSitiAgent(agl.LitAgent[Dict[str,Any]]):
         clean_gt = json.loads(clean_gt_str)
         # convertiamo nel modello
         try: 
-                gt_model = Tecnico.model_validate_json(clean_gt_str)
+                gt_model = Tecnico.model_validate_json(clean_gt)
         except Exception as e:
             logger.error({"error": f"Errore: {str(e)}\n gt: {gt}"})
             return None
@@ -141,9 +141,9 @@ class LitSitiAgent(agl.LitAgent[Dict[str,Any]]):
                 
     def compute_summary_reward(self, predict:str, gt:Dict[str,Any])-> torch.Tensor:
         """Funzione per calcolare il reward tramite gli embedding"""
-        # estraiamo le ground truth
-        clean_gt_str =  re.sub(r"<TOOLCALL>\[(.*?)\]</TOOLCALL>\n?",r"\1", gt['content'])
-        # e convertiamo in un json object
+        # estraiamo gli embedding
+        gt_embed =  torch.Tensor(gt['embedding'])
+        """ # e convertiamo in un json object
         clean_gt = json.loads(clean_gt_str)
         try:
             result = self.agent.embed(clean_gt['arguments']['summary'])
@@ -152,7 +152,8 @@ class LitSitiAgent(agl.LitAgent[Dict[str,Any]]):
                 return None
             gt_embed =  torch.Tensor(self.agent.embed(clean_gt['arguments']['summary'])['embeddings'][0]['embedding'])
         except Exception as e:
-            logger.error(f"la gt in verità è {clean_gt['arguments']}")
+            logger.error(f"la gt in verità è {clean_gt['arguments']}") """
+        
         try:
             predict_embed = torch.Tensor(self.agent.embed(predict)['embeddings'][0]['embedding'])
         except Exception as e:

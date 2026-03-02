@@ -116,7 +116,7 @@ def verl_agent_config() -> Dict[str,Any]:
             "max_actor_ckpt_to_keep": 2,
             "save_freq": 32,
             "test_freq": 10,
-            "total_epochs": 3
+            "total_epochs": 4
         }
     }
     return config
