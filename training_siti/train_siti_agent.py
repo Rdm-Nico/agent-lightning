@@ -128,16 +128,16 @@ def verl_extractor_config() -> Dict[str,Any]:
             "use_kl_in_reward": False
         },
         "data": {
-            "train_batch_size": 64,
+            "train_batch_size": 60,
             "max_prompt_length": 2048,
             "max_response_length": 512
         },
         "actor_rollout_ref": {
             "rollout": {
                 "tensor_model_parallel_size": 1,
-                "n": 8,
+                "n": 5,
                 "log_prob_max_token_len_per_gpu":16384, 
-                "log_prob_micro_batch_size_per_gpu": 4,
+                "log_prob_micro_batch_size_per_gpu": 5,
                 "name": "vllm",
                 "gpu_memory_utilization": 0.6,
                 "engine_kwargs": {
@@ -147,8 +147,8 @@ def verl_extractor_config() -> Dict[str,Any]:
                 },
             },
             "actor": {
-                "ppo_mini_batch_size":32,
-                "ppo_micro_batch_size_per_gpu": 4,
+                "ppo_mini_batch_size":30,
+                "ppo_micro_batch_size_per_gpu": 5,
                 "ppo_max_token_len_per_gpu": 10240,
                 "use_dynamic_bsz":True,
                 "optim": {"lr": 1e-6},
@@ -164,7 +164,7 @@ def verl_extractor_config() -> Dict[str,Any]:
                 }
             },
             "ref": {
-                "log_prob_micro_batch_size_per_gpu": 4,
+                "log_prob_micro_batch_size_per_gpu": 5,
                 "use_dynamic_bsz":True,
                 "log_prob_max_token_len_per_gpu":16384,
                 "fsdp_config": {"param_offload": True}
@@ -181,7 +181,7 @@ def verl_extractor_config() -> Dict[str,Any]:
             "critic_warmup": 0,
             "logger": ["console","wandb"],
             "project_name": "SitiBTAgent",
-            "experiment_name": "ft_extractor_1",
+            "experiment_name": "ft_extractor_2",
             "nnodes": 1,
             "max_actor_ckpt_to_keep": 2,
             "save_freq": 32,

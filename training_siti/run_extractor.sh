@@ -7,6 +7,4 @@ python training_siti/train_siti_agent.py \
     --lora \
     --lora-rank 16 \
     --n-runners 10 \
-    --base-config extractor \
-    --start-embedding \
-    --ci-fast
+    --base-config extractor 

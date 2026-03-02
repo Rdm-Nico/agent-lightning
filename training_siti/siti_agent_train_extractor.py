@@ -24,9 +24,6 @@ class SitiAgent:
         # creiamo i due client 
         self.extractor_model: vLLMClient = vLLMClient(base_url=llm_resources.endpoint)
         
-        self.embedding_model: vLLMClient = vLLMClient(base_url="http://127.0.0.1:8001")
-
-        
         # aggiungiamo i system prompt 
         self.extractor_model.add_system_prompt(EXTRACTOR_MODEL_SYSTEM_PROMPT)
 
@@ -93,10 +90,8 @@ class LitSitiExtractor(agl.LitAgent[Dict[str,Any]]):
         match metric:
             case 'all': 
                 # 1 se tutti i valori sono uguali, 0 altrimenti, per quanto riguarda le note utilizziamo il confronto con gli embedding
-                note_acc = self.compute_embedding_reward(response.note, gt['note']).item()
-                note_inefficienza_acc = self.compute_embedding_reward(response.note_inefficienza, gt['note_inefficienza']).item()
-                logger.info(f"note accuracy: {note_acc}")
-                logger.info(f"note inefficienza: {note_inefficienza_acc}")
+                
+                
 
                 if response.ore_ordinarie == gt['ore_ordinarie'] and response.ore_straordinarie == gt['ore_straordinarie'] \
                     and response.ore_viaggio == gt['ore_viaggio'] and response.durata_inefficienza == gt['durata_inefficienza']:
@@ -104,14 +99,9 @@ class LitSitiExtractor(agl.LitAgent[Dict[str,Any]]):
                 else:
                     vr_reward = 0.0
 
-                if note_acc > 0.5 and note_inefficienza_acc > 0.5:
-                    nlp_reward = 1
-                else:
-                    nlp_reward = 0
 
                 logger.info(f"vr_reward:{vr_reward}")
-                logger.info(f"nlp_reward:{nlp_reward}")
-                return vr_reward + nlp_reward
+                return vr_reward
                 
                 
 
