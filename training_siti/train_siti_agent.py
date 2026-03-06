@@ -55,14 +55,14 @@ def verl_agent_config() -> Dict[str,Any]:
             "use_kl_in_reward": False
         },
         "data": {
-            "train_batch_size": 40,
+            "train_batch_size": 60,
             "max_prompt_length": 4096,
             "max_response_length": 2048
         },
         "actor_rollout_ref": {
             "rollout": {
                 "tensor_model_parallel_size": 1,
-                "n": 8,
+                "n": 5,
                 "log_prob_max_token_len_per_gpu":16384, 
                 "log_prob_micro_batch_size_per_gpu": 10,
                 "multi_turn": {"format": "hermes"},
@@ -81,7 +81,7 @@ def verl_agent_config() -> Dict[str,Any]:
                 "ppo_micro_batch_size_per_gpu": 5,
                 "ppo_max_token_len_per_gpu": 10240,
                 "use_dynamic_bsz":True,
-                "optim": {"lr": 1e-6},
+                "optim": {"lr": 1.22e-6},
                 "use_kl_loss": True,
                 "kl_loss_coef": 0.02,
                 "entropy_coeff": 0.05,
@@ -111,7 +111,7 @@ def verl_agent_config() -> Dict[str,Any]:
             "critic_warmup": 0,
             "logger": ["console","wandb"],
             "project_name": "SitiBTAgent",
-            "experiment_name": "ft_chat_agent_4",
+            "experiment_name": "ft_chat_agent_6",
             "nnodes": 1,
             "max_actor_ckpt_to_keep": 2,
             "save_freq": 32,
@@ -151,7 +151,7 @@ def verl_extractor_config() -> Dict[str,Any]:
                 "ppo_micro_batch_size_per_gpu": 5,
                 "ppo_max_token_len_per_gpu": 10240,
                 "use_dynamic_bsz":True,
-                "optim": {"lr": 1e-6},
+                "optim": {"lr": 2e-6},
                 "use_kl_loss": True,
                 "kl_loss_coef": 0.02,
                 "entropy_coeff": 0.05,
@@ -181,11 +181,11 @@ def verl_extractor_config() -> Dict[str,Any]:
             "critic_warmup": 0,
             "logger": ["console","wandb"],
             "project_name": "SitiBTAgent",
-            "experiment_name": "ft_extractor_2",
+            "experiment_name": "ft_extractor_4",
             "nnodes": 1,
-            "max_actor_ckpt_to_keep": 2,
+            "max_actor_ckpt_to_keep": 3,
             "save_freq": 32,
-            "test_freq": 10,
+            "test_freq": 12,
             "total_epochs": 3
         }
     }

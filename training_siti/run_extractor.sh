@@ -6,5 +6,6 @@ python training_siti/train_siti_agent.py \
     --val-file training_siti/data/test_extractor.parquet \
     --lora \
     --lora-rank 16 \
+    --lora-adapter-path checkpoints/SitiBTAgent/ft_extractor_3/global_step_96/actor/lora_adapter \
     --n-runners 10 \
-    --base-config extractor 
+    --base-config extractor  
