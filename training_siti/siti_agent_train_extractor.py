@@ -23,6 +23,8 @@ class SitiAgent:
     def __init__(self, llm_resources:agl.NamedResources):
         # creiamo i due client 
         self.extractor_model: vLLMClient = vLLMClient(base_url=llm_resources.endpoint)
+        # add embedding model
+        self.embedding_model: vLLMClient = vLLMClient(base_url="http://127.0.0.1:8001")
         
         # aggiungiamo i system prompt 
         self.extractor_model.add_system_prompt(EXTRACTOR_MODEL_SYSTEM_PROMPT)
@@ -89,9 +91,25 @@ class LitSitiExtractor(agl.LitAgent[Dict[str,Any]]):
             return False
         return True
 
-    def _compute_mean_reward(self, response:Tecnico, gt:dict)->float:
+    def compute_similarity(self,predict:str, gt:list[float])->float:
+        """Funzione per calcolare la similarità dei campi testuali"""
+        gt_embed =  torch.Tensor(gt)
+        try:
+            predict_embed = torch.Tensor(self.agent.embed(predict)['embeddings'][0]['embedding'])
+        except Exception as e:
+            logger.error(f"errore nel embed del tensore del predict")
+            return 0
+        # compute cosine similarity
+        cos = torch.nn.CosineSimilarity(dim=0, eps=1e-6)
+        result = cos(predict_embed, gt_embed)
+
+        return result.item()
+    
+    def _compute_mean_reward(self, response:Tecnico, gt:dict, type_selection:str='present')->float:
         denominator = 0
         accumulator = 0
+        acc_note = 0
+        expected_notes = 0
         for key in gt.keys():
             match key:
                 case 'ore_ordinarie':
@@ -131,36 +149,74 @@ class LitSitiExtractor(agl.LitAgent[Dict[str,Any]]):
                         # falso positivo: true è 0 ma il modello ha predetto qualcosa
                         denominator += 1
                 case 'note':
-                    gt_is_present = self.is_present(gt[key])
-                    predict_is_present = self.is_present(response.note)
-                    if gt_is_present != False:
-                        match = 1 if predict_is_present == gt_is_present else 0
-                        accumulator += match
-                        denominator += 1
-                    
-                    elif predict_is_present != False:
-                        # falso positivo: true è 0 ma il modello ha predetto qualcosa
-                        denominator += 1
+                    if type_selection != 'embedding': 
+                        gt_is_present = self.is_present(gt[key])
+                        predict_is_present = self.is_present(response.note)
+                        if gt_is_present != False:
+                            match = 1 if predict_is_present == gt_is_present else 0
+                            accumulator += match
+                            denominator += 1
+                            
+
+
+                        elif predict_is_present != False:
+                            # falso positivo: true è 0 ma il modello ha predetto qualcosa
+                            denominator += 1
+                    else:
+                        # utilizziamo gli embedding con la politica: se la cosine similarity è >= 0.5 allora 1 se no 0
+                        gt_is_present = gt[f'{key}_embedding'] != None
+                        predict_is_present = self.is_present(response.note)
+                        if gt_is_present != False:
+                            result = self.compute_similarity(response.note,gt[f'{key}_embedding']) if predict_is_present == True else 0
+                            match = 1 if result > 0.5 else 0
+                            accumulator += match
+                            denominator += 1
+                            # acc note beccata
+                            acc_note += match
+                            # incrementiamo in ogni caso la presenza della nota
+                            expected_notes += 1
+
+                        elif predict_is_present != False:
+                            # falso positivo: true è 0 ma il modello ha predetto qualcosa
+                            denominator += 1
                 case 'note_inefficienza':
-                    gt_is_present = self.is_present(gt[key])
-                    predict_is_present = self.is_present(response.note_inefficienza) 
-                    if  gt_is_present != False:
-                        match = 1 if predict_is_present == gt_is_present else 0
-                        accumulator += match
-                        denominator += 1
-                    
-                    elif predict_is_present != False:
-                        # falso positivo: true è 0 ma il modello ha predetto qualcosa
-                        denominator += 1
+                    if type_selection != 'embedding':
+                        gt_is_present = self.is_present(gt[key])
+                        predict_is_present = self.is_present(response.note_inefficienza) 
+                        if  gt_is_present != False:
+                            match = 1 if predict_is_present == gt_is_present else 0
+                            accumulator += match
+                            denominator += 1
+
+                        elif predict_is_present != False:
+                            # falso positivo: true è 0 ma il modello ha predetto qualcosa
+                            denominator += 1
+                    else:
+                        # utilizziamo gli embedding con la politica: se la cosine similarity è >= 0.5 allora 1 se no 0
+                        gt_is_present = gt[f'{key}_embedding'] != None
+                        predict_is_present = self.is_present(response.note_inefficienza)
+                        if gt_is_present != False:
+                            result = self.compute_similarity(response.note_inefficienza,gt[f'{key}_embedding']) if predict_is_present == True else 0
+                            match = 1 if result > 0.5 else 0
+                            accumulator += match
+                            denominator += 1
+                            # acc note beccata
+                            acc_note += match
+                            # incrementiamo in ogni caso la presenza della nota
+                            expected_notes += 1
+
+                        elif predict_is_present != False:
+                            # falso positivo: true è 0 ma il modello ha predetto qualcosa
+                            denominator += 1
                 case _:
                     # la commessa è l'ultimo caso e non fa niente
                     continue
         
         if denominator == 0:
             # tutti i campi sono a zero sia in true che predict, si da il massimo
-            return  1
+            return  1, acc_note, expected_notes
         else:
-            return accumulator / denominator
+            return accumulator / denominator, acc_note, expected_notes
 
 
     def compute_extractor_reward(self, response:Tecnico,gt:dict, metric='all')-> float:
@@ -184,7 +240,7 @@ class LitSitiExtractor(agl.LitAgent[Dict[str,Any]]):
 
             case 'mean':
                 # fornire un reward come media dei risultati
-                mean_score = self._compute_mean_reward(response,gt)
+                mean_score,_, _ = self._compute_mean_reward(response,gt)
 
                 # se tutti i  valori sono giusti passiamo un 1.5
                 all_correct = (
@@ -198,6 +254,30 @@ class LitSitiExtractor(agl.LitAgent[Dict[str,Any]]):
 
                 if all_correct:
                     vr_reward =  1.5
+                elif mean_score > .5:
+                    vr_reward = mean_score
+                else:
+                    vr_reward = 0
+            case 'mean_w_embedding':
+                # fornire un reward come media dei risultati + gli embedding per i campi testuali
+                mean_score,acc_note,expected_notes = self._compute_mean_reward(response,gt, 'embedding')
+
+                # se tutti i  valori sono giusti passiamo un 1.5
+                all_correct = (
+                                response.ore_ordinarie == gt['ore_ordinarie'] 
+                                and response.ore_straordinarie == gt['ore_straordinarie']
+                                and response.ore_viaggio == gt['ore_viaggio'] 
+                                and response.durata_inefficienza == gt['durata_inefficienza']
+                                and self.is_present(response.note) == self.is_present(gt['note'])
+                                and self.is_present(response.note_inefficienza) == self.is_present(gt['note_inefficienza'])
+                )
+
+                if all_correct:
+                    if acc_note == expected_notes:
+                        vr_reward =  1.5
+                    else:
+                        # stessa cosa del caso qui sotto
+                        vr_reward = mean_score if mean_score > .5 else 0
                 elif mean_score > .5:
                     vr_reward = mean_score
                 else:
@@ -237,7 +317,7 @@ class LitSitiExtractor(agl.LitAgent[Dict[str,Any]]):
             return 0
         # calcoliamo il reward
         logger.info(f"model response: {model_response}")
-        reward = self.compute_extractor_reward(model_response,gt=gt, metric='mean')
+        reward = self.compute_extractor_reward(model_response,gt=gt, metric='mean_w_embedding')
         logger.info(f"final reward: {reward}")
         return reward
     

@@ -181,9 +181,9 @@ def verl_extractor_config() -> Dict[str,Any]:
             "critic_warmup": 0,
             "logger": ["console","wandb"],
             "project_name": "SitiBTAgent",
-            "experiment_name": "ft_extractor_4",
+            "experiment_name": "ft_extractor_6_embedding",
             "nnodes": 1,
-            "max_actor_ckpt_to_keep": 3,
+            "max_actor_ckpt_to_keep": 4,
             "save_freq": 32,
             "test_freq": 12,
             "total_epochs": 3
