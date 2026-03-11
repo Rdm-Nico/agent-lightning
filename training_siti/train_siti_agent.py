@@ -81,12 +81,13 @@ def verl_agent_config() -> Dict[str,Any]:
                 "ppo_micro_batch_size_per_gpu": 5,
                 "ppo_max_token_len_per_gpu": 10240,
                 "use_dynamic_bsz":True,
-                "optim": {"lr": 1.22e-6},
+                "optim": {"lr": 1.5e-6},
                 "use_kl_loss": True,
                 "kl_loss_coef": 0.02,
                 "entropy_coeff": 0.05,
                 "clip_ratio_low": 0.2,
                 "clip_ratio_high": 0.2,
+                "policy_loss":{},
                 "strategy": "fsdp2",
                 "fsdp_config": {
                     "param_offload": True,
@@ -111,11 +112,11 @@ def verl_agent_config() -> Dict[str,Any]:
             "critic_warmup": 0,
             "logger": ["console","wandb"],
             "project_name": "SitiBTAgent",
-            "experiment_name": "ft_chat_agent_6",
+            "experiment_name": "ft_chat_agent_10_gspo",
             "nnodes": 1,
-            "max_actor_ckpt_to_keep": 2,
-            "save_freq": 32,
-            "test_freq": 10,
+            "max_actor_ckpt_to_keep": 3,
+            "save_freq": 25,
+            "test_freq": 15,
             "total_epochs": 4
         }
     }
@@ -209,7 +210,8 @@ def train(
         mongo_uri:Optional[str],
         agent_match:Optional[str],
         start_embedding:bool,
-        base_config:Optional[str]
+        base_config:Optional[str],
+        gspo:Optional[bool]
 ):
     """The training entrypoint function for Siti agent with VERL algorithm.
 
@@ -251,6 +253,10 @@ def train(
                 config = verl_extractor_config()
                 agent = LitSitiAgent()
     
+    # enable gspo
+    if gspo:
+        config["actor_rollout_ref"]["actor"]["policy_loss"]["loss_mode"] = "gspo"
+        logger.info("enable GSPO loss")
 
     if model:
         config["actor_rollout_ref"]["model"]["path"] = model
@@ -423,7 +429,12 @@ if __name__ == "__main__":
         "--start-embedding",
         action="store_true",
         help="subprocess to start embedding model for reward",
-    )    
+    )
+    parser.add_argument(
+        "--gspo",
+        action="store_true",
+        help="GSPO training",
+    )   
 
     args = parser.parse_args()
 
@@ -459,7 +470,8 @@ if __name__ == "__main__":
         mongo_uri=args.mongo_uri,
         agent_match=args.agent_match,
         start_embedding=args.start_embedding,
-        base_config=args.base_config
+        base_config=args.base_config,
+        gspo=args.gspo
     )
 
     agl.setup_logging("DEBUG" if args.debug else "INFO")

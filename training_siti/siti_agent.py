@@ -263,6 +263,7 @@ class LitSitiAgent(agl.LitAgent[Dict[str,Any]]):
         
         # normalizziamo il fail_reward:
         fail_reward  /= max_turns
+        
         # compute final reward
         if fail_tool_reward != 0:
             # forniamo come final reward solo quello 
