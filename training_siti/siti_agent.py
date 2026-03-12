@@ -180,11 +180,10 @@ class LitSitiAgent(agl.LitAgent[Dict[str,Any]]):
         # init agent
         self.agent:SitiAgent = SitiAgent(llm)
 
-        fail_tool_reward = 0
-        fail_reward = 0
-        summary_rewards = torch.Tensor([]) 
+        final_turn_reward = 0
+        #summary_rewards = torch.Tensor([]) 
         push_reward = 0
-        turn_reward = 0
+        #turn_reward = 0
         
         user_prompts = task["prompt"]
         max_turns = task['extra_info']['user_msg_length']
@@ -211,7 +210,8 @@ class LitSitiAgent(agl.LitAgent[Dict[str,Any]]):
                         logger.info(f"modello chiama extractor quando dovrebbe chiamare push_data: reward nullo e blocco")
                         break
                     # gli forniamo un reward di più uno perché a chiamato il tool nel momento adatto
-                    turn_reward += 1
+                    #turn_reward += 1
+                    
                     # calcolare il reward prima di chiamara l'agent (con gli embedding)
                     try:
                         summary = model_response['tool_calls']['arguments']['summary']
@@ -219,7 +219,11 @@ class LitSitiAgent(agl.LitAgent[Dict[str,Any]]):
                         logger.error(f"il modello ha ritonato un errore: {str(e)} per la response:\n {model_response}\n blocchiamo l'iterazione")
                         break
                     try:
-                        summary_rewards = torch.cat((summary_rewards,self.compute_summary_reward(summary, gt_assistant[idx]).reshape(1)))
+                        #summary_rewards = torch.cat((summary_rewards,self.compute_summary_reward(summary, gt_assistant[idx]).reshape(1)))
+                    
+                        # aggiungiamo il reward del tool e della summary
+                        intermediate_reward = 1.0 + self.compute_summary_reward(summary, gt_assistant[idx]).item()
+                        agl.emit_reward(intermediate_reward)
                     except Exception as e:
                         logger.warning(f"il modello ha ritonato un errore: {str(e)} per la response:\n {model_response}\n blocchiamo l'iterazione")
                         break
@@ -244,7 +248,7 @@ class LitSitiAgent(agl.LitAgent[Dict[str,Any]]):
                         logger.warning(f"il push tool è stato chiamato prima del previsto. blocchiamo l'iterazione")
                         break
                     # gli forniamo un reward di più uno perché a chiamato il tool nel momento adatto
-                    turn_reward += 1
+                    final_turn_reward = 1
                     ris_push = model_response['tool_calls']['arguments']
                     # controlliamo se corrisponde alla gt
                     try:
@@ -260,34 +264,31 @@ class LitSitiAgent(agl.LitAgent[Dict[str,Any]]):
                 # reward negativo per non aver chiamato nessun tool
                 logger.info(f"non chiamato nessun tool: blocchiamo iterazione e diamo i reward fino ad ora")
                 break
-        
-        # normalizziamo il fail_reward:
-        fail_reward  /= max_turns
+    
         
         # compute final reward
-        if fail_tool_reward != 0:
+        final_reward = push_reward + final_turn_reward
+        
+        """ if fail_tool_reward != 0:
             # forniamo come final reward solo quello 
             final_reward = fail_tool_reward
         # check first if summary_rewards ha dei valori se no il final_reward sarà nan e questo bloccherà il training
         elif summary_rewards.numel() != 0:
+            
             final_reward = push_reward + fail_reward + summary_rewards.mean(0).item()  + turn_reward
         else:
             # se non abbiamo salvato nessuna dato allora il final reward deve essere nullo 
-            final_reward = 0
+            final_reward = 0 """
         
         logger.info("+" * 30)
         logger.info(f"rollout id: {rollout.rollout_id}")
         logger.info(f"msg length: {max_turns}")
-        logger.info(f"turn reward: {turn_reward}")                    
-        logger.info(f"summary_rewards: {summary_rewards}")
+        #logger.info(f"turn reward: {turn_reward}")                    
+        #logger.info(f"summary_rewards: {summary_rewards}")
         logger.info(f"push_reward: {push_reward}")
-        logger.info(f"fail_reward: {fail_reward}")
-        logger.info(f"fail_tool_reward: {fail_tool_reward}")
-        logger.info(f"final reward: {final_reward}")
         logger.info("+" * 30)
         logger.info(f"final reward of rollout: {rollout.rollout_id} is: {final_reward}")
         return final_reward
-
 
 
 

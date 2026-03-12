@@ -143,8 +143,8 @@ def get_left_padded_ids_and_attention_mask(
 
 
 def get_right_padded_ids_and_attention_mask(
-    ids: List[int], max_length: int, pad_token_id: int
-) -> Tuple[List[int], List[int]]:
+    ids: List[Any], max_length: int, pad_token_id: int
+) -> Tuple[List[Any], List[Any]]:
     """
     Right-pad (or truncate) a sequence of token IDs to a fixed length,
     and build the corresponding attention mask.
@@ -626,7 +626,8 @@ class AgentModeDaemon:
 
         1. Task: construct from Rollout
         2. Triplets: obtained by querying spans and feeding into the adapter
-        3. Final reward: extracted from last triplet's reward, searching backwards if not found
+        3. Final reward: extracted from last triplet's reward, searching backwards if not found.
+        #FIX: Final reward: sum of the triplet's rewards  
         """
         # Query spans for this rollout (latest attempt)
         spans = await self.store.query_spans(rollout.rollout_id, attempt_id="latest")
@@ -644,8 +645,7 @@ class AgentModeDaemon:
             # Search backwards through triplets for the first non-None reward
             for triplet in reversed(triplets):
                 if triplet.reward is not None:
-                    final_reward = triplet.reward
-                    break
+                    final_reward += triplet.reward
 
         # Construct the Task object from Rollout
         task = Task(
@@ -839,6 +839,7 @@ class AgentModeDaemon:
                     "prompt_ids": t.prompt.get("token_ids", []),
                     "response_ids": t.response.get("token_ids", []),
                     "image_urls": t.prompt.get("image_urls", []),
+                    "reward": t.reward if t.reward != None else 0
                 }
                 for t in rollout.triplets
             ]
@@ -871,6 +872,7 @@ class AgentModeDaemon:
         is_drop_list: List[bool] = []
         image_grid_thw_list: List[Optional[torch.Tensor]] = []  # For Qwen2-VL mrope
         n_trunc_sample_because_of_response = 0
+        
 
         if self.trace_aggregator.get("level", "transition") == "transition":
             for rollout_id, sample_info in finished_id_to_sample_info.items():
@@ -915,6 +917,8 @@ class AgentModeDaemon:
         elif self.trace_aggregator.get("level", "transition") == "trajectory":
             assert not self._use_mrope, "M-RoPE is not supported in trajectory level yet."
 
+            # use a reward mask to capture intermediate rewards
+            reward_mask_list: List[List[float]] = []
             response_mask_list: List[List[int]] = []
             unmerged_count: int = 0
             template_mismatch_count, retoken_mismatch_count, others_mismatch_count = 0, 0, 0
@@ -971,13 +975,19 @@ class AgentModeDaemon:
                         response_ids = prompt_ids[max_prompt_length:]
                         prompt_ids = prompt_ids[:max_prompt_length]
                         response_mask = [1] * len(response_ids)
+                        # add also to the reward mask
+                        reward_mask = [0] * len(response_ids)
                     else:
                         response_ids = []
                         response_mask = []
+                        reward_mask = []
 
                     prompt_length = len(prompt_ids)
                     response_ids += sample_info["trace_list"][current_merged_trace_idx[0]]["response_ids"]
                     response_mask += [1] * len(response_ids)
+                    # add to the reward mask with specific intermediate reward in the last position
+                    reward_mask += [0] * len(response_ids)
+                    reward_mask[-1] = sample_info["trace_list"][current_merged_trace_idx[0]]["reward"]
                     for turn_index in current_merged_trace_idx[1:]:
                         trace = sample_info["trace_list"][turn_index]
                         new_prompt_length = len(trace["prompt_ids"]) - len(response_ids) - prompt_length
@@ -985,6 +995,9 @@ class AgentModeDaemon:
                         response_ids += trace["response_ids"]
                         response_mask += [0] * new_prompt_length
                         response_mask += [1] * len(trace["response_ids"])
+                        # add to the reward mask
+                        reward_mask += [0] * (len(trace["response_ids"]) + new_prompt_length)
+                        reward_mask[-1] = trace["reward"]
 
                     reward_list.append(sample_info["reward"])
 
@@ -999,6 +1012,8 @@ class AgentModeDaemon:
                     if len(response_ids) > max_response_length:
                         response_ids = response_ids[:max_response_length]
                         response_mask = response_mask[:max_response_length]
+                        #TODO we have to copy the reward and move it  backwards 
+                        reward_mask = reward_mask[:max_response_length]
                         n_trunc_sample_because_of_response += 1
 
                     # Pad prompts to the left and responses to the right
@@ -1007,6 +1022,9 @@ class AgentModeDaemon:
                     )
                     one_response_ids, one_response_attention_mask = get_right_padded_ids_and_attention_mask(
                         response_ids, max_response_length, self.pad_token_id
+                    )
+                    one_reward_mask, _ = get_right_padded_ids_and_attention_mask(
+                        reward_mask, max_response_length, self.pad_token_id
                     )
                     one_response_mask, _ = get_right_padded_ids_and_attention_mask(
                         response_mask, max_response_length, 0
@@ -1017,6 +1035,7 @@ class AgentModeDaemon:
                     response_ids_list.append(one_response_ids)
                     response_attention_mask_list.append(one_response_attention_mask)
                     response_mask_list.append(one_response_mask)
+                    reward_mask_list.append(one_reward_mask)
                     data_id_list.append(sample_info["data_id"])
                     rollout_id_list.append(rollout_id)
                     # turn_index_list.append(current_merged_trace_idx)
@@ -1030,6 +1049,9 @@ class AgentModeDaemon:
         response_attention_mask = torch.LongTensor(response_attention_mask_list).to(device)
         response_mask = (
             torch.LongTensor(response_mask_list).to(device) if self.trace_aggregator.get("level", "transition") == "trajectory" else None  # type: ignore
+        )
+        reward_batch = (
+            torch.tensor(reward_mask_list, dtype=torch.float16).to(device) if self.trace_aggregator.get("level", "transition") == "trajectory" else None  # type: ignore
         )
 
         # Concatenate prompts and responses to form the full sequence
@@ -1056,20 +1078,27 @@ class AgentModeDaemon:
         is_drop_mask = torch.BoolTensor(is_drop_list).to(device)
         scores = torch.tensor(reward_list, dtype=torch.bfloat16).to(device)
 
-        # Create token-level scores by placing the final reward at the last token position
-        token_level_scores = torch.zeros_like(attention_mask, dtype=scores.dtype)
-        # For mrope (3D position_ids), use the first dimension (text position_ids) for eos calculation
-        if self._use_mrope:
-            # position_ids is (batch_size, 4, seq_length), use first dim for text positions
-            text_position_ids = position_ids[:, 0, :]  # (batch_size, seq_length)
-            eos_mask_idx = torch.argmax(text_position_ids * attention_mask, dim=-1)  # (bsz,)
+        if reward_batch == None:
+            # Create token-level scores by placing the final reward at the last token position
+            token_level_scores = torch.zeros_like(attention_mask, dtype=scores.dtype)
+            # For mrope (3D position_ids), use the first dimension (text position_ids) for eos calculation
+            if self._use_mrope:
+                # position_ids is (batch_size, 4, seq_length), use first dim for text positions
+                text_position_ids = position_ids[:, 0, :]  # (batch_size, seq_length)
+                eos_mask_idx = torch.argmax(text_position_ids * attention_mask, dim=-1)  # (bsz,)
+            else:
+                eos_mask_idx = torch.argmax(position_ids * attention_mask, dim=-1)  # (bsz,)
+            # At the eos_mask_idx position of each sample, fill in the corresponding scores.
+            # torch.arange(n_transition) generates [0,1,2,...,bsz-1] as indices for the batch dimension.
+            token_level_scores[torch.arange(n_transition), eos_mask_idx] = scores
+            # Only take the last response_length part of the sequence to get the token-level scores for the model's response part.
+            token_level_scores = token_level_scores[:, -max_response_length:]
         else:
-            eos_mask_idx = torch.argmax(position_ids * attention_mask, dim=-1)  # (bsz,)
-        # At the eos_mask_idx position of each sample, fill in the corresponding scores.
-        # torch.arange(n_transition) generates [0,1,2,...,bsz-1] as indices for the batch dimension.
-        token_level_scores[torch.arange(n_transition), eos_mask_idx] = scores
-        # Only take the last response_length part of the sequence to get the token-level scores for the model's response part.
-        token_level_scores = token_level_scores[:, -max_response_length:]
+            # create token-level scores by placing the intermediate rewards in the right position
+            # take only the model's response part
+            token_level_scores = torch.zeros_like(attention_mask[:,-max_response_length:], dtype=torch.bfloat16)
+            # sum with reward_mask * attention_mask
+            token_level_scores += reward_batch * attention_mask[:,-max_response_length:]
 
         # Form the final batch using TensorDict
         batch = TensorDict(
