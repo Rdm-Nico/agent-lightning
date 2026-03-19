@@ -640,7 +640,7 @@ class AgentModeDaemon:
             triplets = self.adapter.adapt(spans)
 
         # Extract final reward from triplets
-        final_reward: Optional[float] = None
+        final_reward: Optional[float] = 0
         if triplets:
             # Search backwards through triplets for the first non-None reward
             for triplet in reversed(triplets):

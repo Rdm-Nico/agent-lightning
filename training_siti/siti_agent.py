@@ -180,10 +180,10 @@ class LitSitiAgent(agl.LitAgent[Dict[str,Any]]):
         # init agent
         self.agent:SitiAgent = SitiAgent(llm)
 
-        final_turn_reward = 0
+        
         #summary_rewards = torch.Tensor([]) 
         push_reward = 0
-        #turn_reward = 0
+        turn_reward = 0
         
         user_prompts = task["prompt"]
         max_turns = task['extra_info']['user_msg_length']
@@ -210,7 +210,7 @@ class LitSitiAgent(agl.LitAgent[Dict[str,Any]]):
                         logger.info(f"modello chiama extractor quando dovrebbe chiamare push_data: reward nullo e blocco")
                         break
                     # gli forniamo un reward di più uno perché a chiamato il tool nel momento adatto
-                    #turn_reward += 1
+                    turn_reward = 1.0
                     
                     # calcolare il reward prima di chiamara l'agent (con gli embedding)
                     try:
@@ -221,13 +221,18 @@ class LitSitiAgent(agl.LitAgent[Dict[str,Any]]):
                     try:
                         #summary_rewards = torch.cat((summary_rewards,self.compute_summary_reward(summary, gt_assistant[idx]).reshape(1)))
                     
-                        # aggiungiamo il reward del tool e della summary
-                        intermediate_reward = 1.0 + self.compute_summary_reward(summary, gt_assistant[idx]).item()
-                        agl.emit_reward(intermediate_reward)
+                        # aggiungiamo il reward del turn e della summary
+                        intermediate_reward = turn_reward + self.compute_summary_reward(summary, gt_assistant[idx]).item()
+                        
                     except Exception as e:
-                        logger.warning(f"il modello ha ritonato un errore: {str(e)} per la response:\n {model_response}\n blocchiamo l'iterazione")
+                        logger.warning(f"il modello ha ritonato un errore: {str(e)} per la response:\n {model_response}\n blocchiamo l'iterazione emettendo solo il turn")
                         break
+                    # emit the reward
+                    agl.emit_reward(intermediate_reward)
                     
+                    # azzeriamo il turn
+                    turn_reward = 0
+
                     extractor_response = self.agent.extract(summary)
                     if extractor_response == None:
                         logger.warning(f"il modello estrattore è andato in errore, in questi casi limitati utilizziamo la gt")
@@ -235,9 +240,7 @@ class LitSitiAgent(agl.LitAgent[Dict[str,Any]]):
                         if extractor_response == None:
                             logger.error(f"la gt non è stata riuscita ad inserire nel modello Pydantic, continuiamo come nulla fosse")
                             continue
-                    """ except Exception as e:
-                        logger.warning(f"il modello ha ritonato un errore: {str(e)} per la response:\n {model_response}\n blocchiamo l'iterazione")
-                        break """
+                    
 
                     
                     # inseriamo nella history la risposta del extractor come un tool
@@ -248,7 +251,7 @@ class LitSitiAgent(agl.LitAgent[Dict[str,Any]]):
                         logger.warning(f"il push tool è stato chiamato prima del previsto. blocchiamo l'iterazione")
                         break
                     # gli forniamo un reward di più uno perché a chiamato il tool nel momento adatto
-                    final_turn_reward = 1
+                    turn_reward = 1
                     ris_push = model_response['tool_calls']['arguments']
                     # controlliamo se corrisponde alla gt
                     try:
@@ -267,7 +270,7 @@ class LitSitiAgent(agl.LitAgent[Dict[str,Any]]):
     
         
         # compute final reward
-        final_reward = push_reward + final_turn_reward
+        final_reward = push_reward + turn_reward
         
         """ if fail_tool_reward != 0:
             # forniamo come final reward solo quello 
@@ -289,6 +292,7 @@ class LitSitiAgent(agl.LitAgent[Dict[str,Any]]):
         logger.info("+" * 30)
         logger.info(f"final reward of rollout: {rollout.rollout_id} is: {final_reward}")
         return final_reward
+
 
 
 

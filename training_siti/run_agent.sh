@@ -10,4 +10,4 @@ python training_siti/train_siti_agent.py \
     --base-config agent \
     --agent-match chat \
     --start-embedding \
-    --gspo 
+    --ci-fast  

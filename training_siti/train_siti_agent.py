@@ -112,12 +112,12 @@ def verl_agent_config() -> Dict[str,Any]:
             "critic_warmup": 0,
             "logger": ["console","wandb"],
             "project_name": "SitiBTAgent",
-            "experiment_name": "ft_chat_agent_10_gspo",
+            "experiment_name": "ft_chat_agent_11_dense_reward",
             "nnodes": 1,
             "max_actor_ckpt_to_keep": 3,
             "save_freq": 25,
             "test_freq": 15,
-            "total_epochs": 4
+            "total_epochs": 3
         }
     }
     return config
