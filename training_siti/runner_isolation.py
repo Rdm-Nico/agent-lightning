@@ -1,5 +1,5 @@
 import agentlightning as agl
-from siti_agent_train_extractor import LitSitiExtractor
+from siti_agent import LitSitiAgent,LitSitiAgentSparse
 import pyarrow.parquet as pq
 from typing import cast, List, Dict, Any
 from utils.logger import Logger
@@ -16,12 +16,13 @@ async def runner():
     runner = agl.LitAgentRunner(tracer)
     store = agl.LightningStoreClient("http://127.0.0.1:4747")
 
-    table = pq.read_table("./data/train_extractor.parquet")
+    table = pq.read_table("./data/test_agent_w_embedding.parquet")
     df = cast(List[Dict[str, Any]], table.to_pylist()[:10])
+
     print(f"running rollout with input task: {df[2]}")
-    with runner.run_context(agent=LitSitiExtractor(), store=store):
+    with runner.run_context(agent=LitSitiAgentSparse(), store=store):
         rollout = await runner.step(
-            df[2],
+            df[7],
             resources={
             "main_llm": agl.LLM(
                 endpoint="http://127.0.0.1:8000",
@@ -34,7 +35,7 @@ async def runner():
         # query the store
         spans = await store.query_spans(rollout.rollout_id)
         
-        adapter = agl.TracerTraceToTriplet()
+        adapter = agl.TracerTraceToTriplet(agent_match='chat', match_w_itself=True)
 
         # convert span in trajectory
         #adapter.visualize(spans)

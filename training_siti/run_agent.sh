@@ -9,5 +9,4 @@ python training_siti/train_siti_agent.py \
     --n-runners 10 \
     --base-config agent \
     --agent-match chat \
-    --start-embedding \
-    --ci-fast  
+    --start-embedding   
