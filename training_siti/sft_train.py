@@ -1,6 +1,7 @@
 from datasets import load_dataset
 from trl import SFTTrainer, SFTConfig
 from peft import LoraConfig
+from transformers import AutoModelForCausalLM, AutoTokenizer
 import argparse
 from utils.logger import Logger
 import os
@@ -18,7 +19,6 @@ def main():
     parser.add_argument("--project-name", type=str, default=None, help="Project name in which to save the checkpoints and wandb")
     parser.add_argument("--run-name", type=str, default=None, help="Run name of wandb")
     parser.add_argument("--model", type=str, default=None, help="HF model id or path (optional)")
-    parser.add_argument("--n-runners", type=int, default=10, help="Number of processes to use for dataset")
     parser.add_argument("--n-epochs", type=float, default=3.0, help="Number of train epochs")
     parser.add_argument("--device-batch-size", type=int, default=8, help="Per device train batch size")
     parser.add_argument("--gradient-accumulation-steps", type=int, default=1.0, help="Number of update steps to accumulate gradients before performing a backward pass")
@@ -31,6 +31,9 @@ def main():
     parser.add_argument("--save-step", type=int, default=20, help="Number of updates steps before two checkpoint saves")
     parser.add_argument("--total-ckp-limit", type=int, default=4, help="Maximum number of checkpoints to keep. Deletes older checkpoints. If load_best_model_at_end=True, the best checkpoint is always retained plus the most recent ones")
     parser.add_argument("--load-best-ckp", type=bool, default=True, help="Load the best checkpoints at the end of the training. When `True`, `save_strategy` must match `eval_strategy`, and if using `steps`, `save_steps` must be a multiple of `eval_steps` ")
+    parser.add_argument("--resum-from-checkpoint", type=str,help="Path to a folder with a valid checkpoint ")
+    parser.add_argument("--max-seq-length", type=int, default=20, help="max sequence length")
+    parser.add_argument("--optim", type=str, help="optimizer")
     parser.add_argument(
         "--lora",
         action="store_true",
@@ -57,11 +60,26 @@ def main():
     logger.info(f"len of dataset_train: {dataset_train.shape}")
     logger.info(f"len of dataset_val: {dataset_val.shape}")
 
+
+    tokeinzer = AutoTokenizer.from_pretrained(args.model, trust_remote_code=True)
+    model = AutoModelForCausalLM.from_pretrained(
+        args.model,
+        torch_dtype=torch.bfloat16,
+        device_map="auto",
+        trust_remote_code=True
+    ) 
+
     if args.lora:
         # add lora config
         lora_config = LoraConfig(
             r=args.lora_rank,
-            lora_alpha=32
+            lora_alpha=32,
+            lora_dropout=0.05,
+            bias="none",
+            target_modules=[               
+                "q_proj", "k_proj", "v_proj", "o_proj",
+                "gate_proj", "up_proj", "down_proj",
+            ]
         )
     
     # add sft training
@@ -84,6 +102,10 @@ def main():
             num_train_epochs=args.n_epochs,
             per_device_train_batch_size=args.device_batch_size,
             gradient_accumulation_steps=args.gradient_accumulation_steps,
+            learning_rate=args.lr,
+            lr_scheduler_type="cosine",
+            warmup_ratio=0.05,
+            weight_decay=0.01,
             max_grad_norm=args.max_grad_norm,
             label_smoothing_factor=args.label_smoothing_factor,
             torch_compile=True,
@@ -100,7 +122,10 @@ def main():
             save_steps=args.save_steps,
             save_total_limit=args.total_ckp_limit,
             load_best_model_at_end=True,
-            
+            metric_for_best_model="eval_loss"
+            resume_from_checkpoint=args.resum_from_checkpoint,
+            packing=False,
+            max_seq_length=args.max_seq_length
         )
 
 
