@@ -81,12 +81,12 @@ def verl_agent_config() -> Dict[str,Any]:
                 "ppo_micro_batch_size_per_gpu": 5,
                 "ppo_max_token_len_per_gpu": 10240,
                 "use_dynamic_bsz":True,
-                "optim": {"lr": 2e-7},
+                "optim": {"lr": 1.5e-6},
                 "use_kl_loss": True,
                 "kl_loss_coef": 0.02,
                 "entropy_coeff": 0.05,
-                "clip_ratio_low": 0.15,
-                "clip_ratio_high": 0.15,
+                "clip_ratio_low": 0.2,
+                "clip_ratio_high": 0.2,
                 "policy_loss":{},
                 "strategy": "fsdp2",
                 "fsdp_config": {
@@ -112,12 +112,12 @@ def verl_agent_config() -> Dict[str,Any]:
             "critic_warmup": 0,
             "logger": ["console","wandb"],
             "project_name": "SitiBTAgent",
-            "experiment_name": "ft_chat_agent_12_dense_reward",
+            "experiment_name": "ft_chat_agent_13_dense_reward",
             "nnodes": 1,
             "max_actor_ckpt_to_keep": 4,
             "save_freq": 16,
             "test_freq": 15,
-            "total_epochs": 3
+            "total_epochs": 5
         }
     }
     return config

@@ -1,29 +1,30 @@
+
 # script for run the ft with sft
 
 model_id="Qwen/Qwen3-4B-Instruct-2507"
 # datasets & output dir
-train_file="training_siti/data/train_sft.json"
-val_file="training_siti/data/test_sft.json"
+train_file="training_siti/data/train_sft_extractor.json"
+val_file="training_siti/data/test_sft_extractor.json"
 output_dir="checkpoints/SFT/"
 
 lora_rank=16
-lr=1e-4
+lr=5e-5
 per_device_bs=2
 grad_acc_step=4
-epochs=3
-max_seq_length=2048
+epochs=6
+max_seq_length=1024
 eval_per_device_bs=2
 
 # eval & save
-eval_steps=30
-log_steps=10
-save_steps=60
+eval_steps=10
+log_steps=5
+save_steps=30
 save_tot_limit=3
 
 # optim
 optim="adamw_torch_fused"
 #  reporting 
-run_name="sft_agent_1"
+run_name="sft_extractor_1"
 export WANDB_PROJECT="SitiBTAgentSFT"
 
 cd ..
@@ -47,10 +48,4 @@ python training_siti/sft_train.py \
     --total-ckp-limit ${save_tot_limit} \
     --optim ${optim} \
     --run-name ${run_name} 
-
-
-
-
-
-
     

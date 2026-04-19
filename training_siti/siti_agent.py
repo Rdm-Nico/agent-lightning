@@ -186,7 +186,7 @@ class LitSitiAgent(agl.LitAgent[Dict[str,Any]]):
         turn_reward = 0
         
         user_prompts = task["prompt"]
-        max_turns = task['extra_info']['user_msg_length']
+        max_turns = task['extra_info']['user_msg_length'] - 1
         gt = task['reward_model']['ground_truth']
         # separiamo assistant gt rispetto a extractor
         gt_assistant = [assistant for assistant in gt if assistant['role'] == 'assistant']
@@ -206,7 +206,7 @@ class LitSitiAgent(agl.LitAgent[Dict[str,Any]]):
                 tool_call_id = model_response['tool_calls']['id']
 
                 if function_name == 'extractor_expert':
-                    if idx == max_turns -1:
+                    if idx == max_turns:
                         logger.info(f"modello chiama extractor quando dovrebbe chiamare push_data: reward nullo e blocco")
                         break
                     # gli forniamo un reward di più uno perché a chiamato il tool nel momento adatto
@@ -223,7 +223,8 @@ class LitSitiAgent(agl.LitAgent[Dict[str,Any]]):
                     
                         # aggiungiamo il reward del turn e della summary
                         intermediate_reward = turn_reward + self.compute_summary_reward(summary, gt_assistant[idx]).item()
-                        
+                        # normalizziamo
+                        intermediate_reward /=max_turns
                     except Exception as e:
                         logger.warning(f"il modello ha ritonato un errore: {str(e)} per la response:\n {model_response}\n blocchiamo l'iterazione emettendo solo il turn")
                         break
@@ -247,7 +248,7 @@ class LitSitiAgent(agl.LitAgent[Dict[str,Any]]):
                     self.agent.save_tool_response(extractor_response.model_dump_json(),tool_call_id,function_name) 
 
                 elif function_name == 'push_data':
-                    if idx != max_turns - 1:
+                    if idx != max_turns:
                         logger.warning(f"il push tool è stato chiamato prima del previsto. blocchiamo l'iterazione")
                         break
                     # gli forniamo un reward di più uno perché a chiamato il tool nel momento adatto
@@ -285,7 +286,7 @@ class LitSitiAgent(agl.LitAgent[Dict[str,Any]]):
         
         logger.info("+" * 30)
         logger.info(f"rollout id: {rollout.rollout_id}")
-        logger.info(f"msg length: {max_turns}")
+        logger.info(f"msg length(meno 1): {max_turns}")
         #logger.info(f"turn reward: {turn_reward}")                    
         #logger.info(f"summary_rewards: {summary_rewards}")
         logger.info(f"push_reward: {push_reward}")
